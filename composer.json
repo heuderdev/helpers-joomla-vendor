@@ -1,0 +1,20 @@
+{
+    "name": "heuderdev/aplicacao",
+    "description": "Aplicação que utiliza os helpers",
+    "type": "project",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "packages/heuderdev/helpers",
+            "options": {
+                "symlink": false,
+                "versions": {
+                    "heuderdev/helpers": "dev-main"
+                }
+            }
+        }
+    ],
+    "require": {
+        "heuderdev/helpers": "dev-main"
+    }
+}
