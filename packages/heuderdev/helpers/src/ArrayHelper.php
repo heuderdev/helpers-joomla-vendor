@@ -433,9 +433,838 @@ class ArrayHelper
         return $resultado;
     }
 
+    /*
+     * Registros cujo campo está na lista. Não estrito por padrão, porque
+     * valores do banco costumam vir como texto.
+     */
+    public static function whereIn(
+        array $registros,
+        $caminho,
+        array $valores,
+        $preservarChaves = false,
+        $estrito = false
+    ) {
+        return self::filterRecords(
+            $registros,
+            $caminho,
+            function ($atual) use ($valores, $estrito) {
+                return in_array($atual, $valores, (bool) $estrito);
+            },
+            $preservarChaves
+        );
+    }
+
+    public static function whereNotIn(
+        array $registros,
+        $caminho,
+        array $valores,
+        $preservarChaves = false,
+        $estrito = false
+    ) {
+        return self::filterRecords(
+            $registros,
+            $caminho,
+            function ($atual, $existe) use ($valores, $estrito) {
+                return !$existe || !in_array($atual, $valores, (bool) $estrito);
+            },
+            $preservarChaves,
+            true
+        );
+    }
+
+    /*
+     * Registros cujo campo é null ou não existe.
+     */
+    public static function whereNull(array $registros, $caminho, $preservarChaves = false)
+    {
+        return self::filterRecords(
+            $registros,
+            $caminho,
+            function ($atual) {
+                return $atual === null;
+            },
+            $preservarChaves,
+            true
+        );
+    }
+
+    public static function whereNotNull(array $registros, $caminho, $preservarChaves = false)
+    {
+        return self::filterRecords(
+            $registros,
+            $caminho,
+            function ($atual) {
+                return $atual !== null;
+            },
+            $preservarChaves
+        );
+    }
+
+    /*
+     * Filtro com operador:
+     *   =, ==, ===, !=, <>, !==, <, <=, >, >=,
+     *   in, not in, between, not between (valor = [min, max]),
+     *   like, not like (% e _ como no SQL, sem diferenciar maiúsculas),
+     *   contains, starts with, ends with.
+     *
+     *   ArrayHelper::whereCompare($pedidos, 'total', '>=', 100);
+     *   ArrayHelper::whereCompare($clientes, 'nome', 'like', 'ana%');
+     */
+    public static function whereCompare(
+        array $registros,
+        $caminho,
+        $operador,
+        $valor,
+        $preservarChaves = false
+    ) {
+        $operador = strtolower(trim((string) $operador));
+
+        return self::filterRecords(
+            $registros,
+            $caminho,
+            function ($atual) use ($operador, $valor) {
+                return self::compare($atual, $operador, $valor);
+            },
+            $preservarChaves
+        );
+    }
+
+    /*
+     * Último item (ou o último que passar no filtro).
+     */
+    public static function last(
+        array $dados,
+        ?callable $filtro = null,
+        $padrao = null
+    ) {
+        if ($filtro === null) {
+            return $dados === [] ? self::value($padrao) : end($dados);
+        }
+
+        return self::first(array_reverse($dados, true), $filtro, $padrao);
+    }
+
+    /*
+     * Ordena registros por um campo ou Closure. Estável: empates mantêm a
+     * ordem original. Null fica antes de qualquer valor.
+     */
+    public static function sortBy(
+        array $registros,
+        $caminho,
+        $decrescente = false,
+        $preservarChaves = false
+    ) {
+        return self::sortByMany(
+            $registros,
+            [[$caminho, $decrescente ? 'desc' : 'asc']],
+            $preservarChaves
+        );
+    }
+
+    /*
+     * Ordena por vários campos:
+     *   ArrayHelper::sortByMany($r, ['status' => 'asc', 'total' => 'desc']);
+     * Para usar Closure ou caminho em array: [[fn ($r) => ..., 'desc']].
+     */
+    public static function sortByMany(
+        array $registros,
+        array $criterios,
+        $preservarChaves = false
+    ) {
+        $regras = [];
+
+        foreach ($criterios as $chave => $criterio) {
+            if (is_array($criterio)) {
+                $caminho = $criterio[0];
+                $direcao = isset($criterio[1]) ? $criterio[1] : 'asc';
+            } else {
+                $caminho = $chave;
+                $direcao = $criterio;
+            }
+
+            $regras[] = [
+                $caminho,
+                strtolower((string) $direcao) === 'desc' ? -1 : 1,
+            ];
+        }
+
+        $linhas = [];
+
+        foreach ($registros as $indice => $registro) {
+            $valores = [];
+
+            foreach ($regras as $regra) {
+                $valores[] = self::resolve($registro, $indice, $regra[0]);
+            }
+
+            $linhas[] = [$indice, $registro, $valores];
+        }
+
+        usort($linhas, function ($a, $b) use ($regras) {
+            foreach ($regras as $posicao => $regra) {
+                $resultado = self::compareValues($a[2][$posicao], $b[2][$posicao]);
+
+                if ($resultado !== 0) {
+                    return $resultado * $regra[1];
+                }
+            }
+
+            return 0;
+        });
+
+        $resultado = [];
+
+        foreach ($linhas as $linha) {
+            if ($preservarChaves) {
+                $resultado[$linha[0]] = $linha[1];
+            } else {
+                $resultado[] = $linha[1];
+            }
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Remove duplicados (pelo valor ou por um campo/Closure). Mantém o
+     * primeiro e as chaves originais.
+     */
+    public static function unique(array $dados, $caminho = null, $estrito = false)
+    {
+        $vistos = [];
+        $resultado = [];
+
+        foreach ($dados as $indice => $item) {
+            $valor = $caminho === null ? $item : self::resolve($item, $indice, $caminho);
+
+            if (in_array($valor, $vistos, (bool) $estrito)) {
+                continue;
+            }
+
+            $vistos[] = $valor;
+            $resultado[$indice] = $item;
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Soma de um campo (ou dos próprios valores, se $caminho for null).
+     * Ignora valores não numéricos.
+     */
+    public static function sum(array $registros, $caminho = null)
+    {
+        $total = 0;
+
+        foreach (self::numericValues($registros, $caminho) as $valor) {
+            $total += $valor;
+        }
+
+        return $total;
+    }
+
+    /*
+     * Média de um campo; null se não houver valores numéricos.
+     */
+    public static function avg(array $registros, $caminho = null)
+    {
+        $valores = self::numericValues($registros, $caminho);
+
+        return $valores === [] ? null : array_sum($valores) / count($valores);
+    }
+
+    public static function min(array $registros, $caminho = null)
+    {
+        $valores = self::numericValues($registros, $caminho);
+
+        return $valores === [] ? null : min($valores);
+    }
+
+    public static function max(array $registros, $caminho = null)
+    {
+        $valores = self::numericValues($registros, $caminho);
+
+        return $valores === [] ? null : max($valores);
+    }
+
+    /*
+     * Quantidade de registros por valor do campo: ['ativo' => 3, 'inativo' => 1].
+     */
+    public static function countBy(array $registros, $caminho = null)
+    {
+        $resultado = [];
+
+        foreach ($registros as $indice => $registro) {
+            $chave = self::normalizeIndex(
+                $caminho === null ? $registro : self::resolve($registro, $indice, $caminho)
+            );
+
+            $resultado[$chave] = isset($resultado[$chave]) ? $resultado[$chave] + 1 : 1;
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Divide em [os que passam, os que não passam], mantendo as chaves.
+     */
+    public static function partition(array $dados, callable $filtro)
+    {
+        $passam = [];
+        $naoPassam = [];
+
+        foreach ($dados as $chave => $valor) {
+            if ($filtro($valor, $chave)) {
+                $passam[$chave] = $valor;
+            } else {
+                $naoPassam[$chave] = $valor;
+            }
+        }
+
+        return [$passam, $naoPassam];
+    }
+
+    /*
+     * array_map que mantém as chaves e passa ($valor, $chave).
+     */
+    public static function map(array $dados, callable $callback)
+    {
+        $resultado = [];
+
+        foreach ($dados as $chave => $valor) {
+            $resultado[$chave] = $callback($valor, $chave);
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * O callback devolve [chave => valor]; os pares são juntados.
+     *   ArrayHelper::mapWithKeys($r, fn ($x) => [$x['id'] => $x['nome']]);
+     */
+    public static function mapWithKeys(array $dados, callable $callback)
+    {
+        $resultado = [];
+
+        foreach ($dados as $chave => $valor) {
+            foreach ((array) $callback($valor, $chave) as $novaChave => $novoValor) {
+                $resultado[$novaChave] = $novoValor;
+            }
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Só alguns campos de cada registro (útil antes de exportar ou
+     * devolver em API). Mantém as chaves dos registros.
+     */
+    public static function select(array $registros, $campos)
+    {
+        $resultado = [];
+
+        foreach ($registros as $indice => $registro) {
+            $resultado[$indice] = self::only($registro, $campos);
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Monta uma árvore a partir de registros com id/parent_id
+     * (categorias, menus, comentários). Registros cujo pai não existe
+     * ficam na raiz. Arrays recebem a chave $filhos; objetos, a propriedade.
+     */
+    public static function toTree(
+        array $registros,
+        $campoId = 'id',
+        $campoPai = 'parent_id',
+        $filhos = 'children',
+        $raiz = null
+    ) {
+        $nos = [];
+
+        foreach ($registros as $registro) {
+            $id = self::normalizeIndex(self::get($registro, $campoId));
+
+            if (is_object($registro)) {
+                $registro = clone $registro;
+                $registro->{$filhos} = [];
+            } else {
+                $registro[$filhos] = [];
+            }
+
+            $nos[$id] = $registro;
+        }
+
+        $arvore = [];
+
+        // Referências, para que os filhos já montados apareçam no pai.
+        foreach (array_keys($nos) as $id) {
+            $pai = self::get($nos[$id], $campoPai);
+            $chavePai = $pai === null ? null : self::normalizeIndex($pai);
+
+            if (
+                $pai === $raiz
+                || $chavePai === null
+                || $chavePai === $id
+                || !array_key_exists($chavePai, $nos)
+            ) {
+                $arvore[] = &$nos[$id];
+            } elseif (is_object($nos[$chavePai])) {
+                $nos[$chavePai]->{$filhos}[] = &$nos[$id];
+            } else {
+                $nos[$chavePai][$filhos][] = &$nos[$id];
+            }
+        }
+
+        // Quebra as referências antes de devolver.
+        return self::copyTree($arvore, $filhos);
+    }
+
+    // ------------------------------------------------------------------
+    // Estrutura
+    // ------------------------------------------------------------------
+
+    /*
+     * Achata em notação de ponto: ['a' => ['b' => 1]] -> ['a.b' => 1].
+     * Arrays vazios ficam como [] na chave correspondente.
+     */
+    public static function dot($dados, $prefixo = '')
+    {
+        $resultado = [];
+
+        foreach (self::toArray($dados) as $chave => $valor) {
+            if (is_object($valor) && self::isConvertibleObject($valor)) {
+                $valor = self::toArray($valor);
+            }
+
+            if (is_array($valor) && $valor !== []) {
+                foreach (self::dot($valor, $prefixo . $chave . '.') as $subchave => $subvalor) {
+                    $resultado[$subchave] = $subvalor;
+                }
+            } else {
+                $resultado[$prefixo . $chave] = $valor;
+            }
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Inverso de dot(): ['a.b' => 1] -> ['a' => ['b' => 1]].
+     */
+    public static function undot(array $dados)
+    {
+        $resultado = [];
+
+        foreach ($dados as $chave => $valor) {
+            self::setBySegments($resultado, self::segments($chave), $valor);
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Achata em uma lista simples de valores, até a profundidade informada.
+     */
+    public static function flatten(array $dados, $profundidade = INF)
+    {
+        $resultado = [];
+
+        foreach ($dados as $item) {
+            if (is_object($item) && !($item instanceof Traversable)) {
+                $resultado[] = $item;
+                continue;
+            }
+
+            if (!is_iterable($item)) {
+                $resultado[] = $item;
+                continue;
+            }
+
+            $item = is_array($item) ? $item : iterator_to_array($item, false);
+            $valores = $profundidade <= 1
+                ? array_values($item)
+                : self::flatten($item, $profundidade - 1);
+
+            foreach ($valores as $valor) {
+                $resultado[] = $valor;
+            }
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Junta uma lista de arrays em um só: [[1, 2], [3]] -> [1, 2, 3].
+     */
+    public static function collapse(array $dados)
+    {
+        return self::flatten($dados, 1);
+    }
+
+    /*
+     * Mescla recursiva sem o efeito do array_merge_recursive (que
+     * transforma valores repetidos em listas). Chaves de texto são
+     * substituídas/mescladas; chaves numéricas são acrescentadas.
+     */
+    public static function merge(array $base, array ...$outros)
+    {
+        foreach ($outros as $outro) {
+            foreach ($outro as $chave => $valor) {
+                if (is_int($chave)) {
+                    $base[] = $valor;
+                } elseif (
+                    is_array($valor)
+                    && isset($base[$chave])
+                    && is_array($base[$chave])
+                ) {
+                    $base[$chave] = self::merge($base[$chave], $valor);
+                } else {
+                    $base[$chave] = $valor;
+                }
+            }
+        }
+
+        return $base;
+    }
+
+    /*
+     * Remove null e '' (e arrays que ficarem vazios, se pedido).
+     * Listas são reindexadas.
+     */
+    public static function clean(array $dados, $removerArraysVazios = false, $recursivo = true)
+    {
+        $lista = self::isList($dados);
+
+        foreach ($dados as $chave => $valor) {
+            if ($recursivo && is_array($valor)) {
+                $valor = self::clean($valor, $removerArraysVazios, true);
+                $dados[$chave] = $valor;
+            }
+
+            if ($valor === null || $valor === '' || ($removerArraysVazios && $valor === [])) {
+                unset($dados[$chave]);
+            }
+        }
+
+        return $lista ? array_values($dados) : $dados;
+    }
+
+    /*
+     * Renomeia chaves: ['NUM_COOP' => 'num_coop']. Com $manterOutras =
+     * false, só as chaves mapeadas ficam.
+     */
+    public static function renameKeys(array $dados, array $mapa, $manterOutras = true)
+    {
+        $resultado = [];
+
+        foreach ($dados as $chave => $valor) {
+            if (array_key_exists($chave, $mapa)) {
+                $resultado[$mapa[$chave]] = $valor;
+            } elseif ($manterOutras) {
+                $resultado[$chave] = $valor;
+            }
+        }
+
+        return $resultado;
+    }
+
+    /*
+     * Chaves em minúsculas (CASE_LOWER) ou maiúsculas (CASE_UPPER),
+     * opcionalmente em todos os níveis. Suporta acentos.
+     */
+    public static function changeKeyCase(array $dados, $caixa = CASE_LOWER, $recursivo = false)
+    {
+        $resultado = [];
+
+        foreach ($dados as $chave => $valor) {
+            if (is_string($chave)) {
+                $chave = function_exists('mb_strtolower')
+                    ? ($caixa === CASE_UPPER ? mb_strtoupper($chave, 'UTF-8') : mb_strtolower($chave, 'UTF-8'))
+                    : ($caixa === CASE_UPPER ? strtoupper($chave) : strtolower($chave));
+            }
+
+            if ($recursivo && is_array($valor)) {
+                $valor = self::changeKeyCase($valor, $caixa, true);
+            }
+
+            $resultado[$chave] = $valor;
+        }
+
+        return $resultado;
+    }
+
+    // ------------------------------------------------------------------
+    // Atalhos
+    // ------------------------------------------------------------------
+
+    /*
+     * Lê e remove o caminho.
+     */
+    public static function pull(&$dados, $caminho, $padrao = null)
+    {
+        if (!self::has($dados, $caminho)) {
+            return self::value($padrao);
+        }
+
+        $valor = self::get($dados, $caminho);
+        self::forget($dados, $caminho);
+
+        return $valor;
+    }
+
+    /*
+     * Grava só se o caminho ainda não existir.
+     */
+    public static function add(&$dados, $caminho, $valor)
+    {
+        if (!self::has($dados, $caminho)) {
+            self::set($dados, $caminho, $valor);
+        }
+
+        return $dados;
+    }
+
+    /*
+     * true se pelo menos um dos caminhos existir.
+     */
+    public static function hasAny($dados, array $caminhos)
+    {
+        foreach ($caminhos as $caminho) {
+            if (self::has($dados, $caminho)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /*
+     * true se todos os caminhos existirem.
+     */
+    public static function hasAll($dados, array $caminhos)
+    {
+        if ($caminhos === []) {
+            return false;
+        }
+
+        foreach ($caminhos as $caminho) {
+            if (!self::has($dados, $caminho)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /*
+     * Garante um array: null -> [], escalar/objeto -> [valor].
+     */
+    public static function wrap($valor)
+    {
+        if ($valor === null) {
+            return [];
+        }
+
+        return is_array($valor) ? $valor : [$valor];
+    }
+
+    /*
+     * true se o array tiver chaves de texto ou fora de sequência.
+     */
+    public static function isAssoc(array $dados)
+    {
+        return !self::isList($dados);
+    }
+
+    /*
+     * true se o valor puder ser lido com get() (array ou objeto).
+     */
+    public static function accessible($valor)
+    {
+        return is_array($valor) || is_object($valor);
+    }
+
     // ------------------------------------------------------------------
     // Internos
     // ------------------------------------------------------------------
+
+    private static function filterRecords(
+        array $registros,
+        $caminho,
+        callable $teste,
+        $preservarChaves,
+        $incluirAusentes = false
+    ) {
+        $resultado = [];
+
+        foreach ($registros as $chave => $registro) {
+            if ($caminho instanceof Closure) {
+                $existe = true;
+                $atual = $caminho($registro, $chave);
+            } else {
+                $existe = self::has($registro, $caminho);
+                $atual = $existe ? self::get($registro, $caminho) : null;
+            }
+
+            if (!$existe && !$incluirAusentes) {
+                continue;
+            }
+
+            if (!$teste($atual, $existe)) {
+                continue;
+            }
+
+            if ($preservarChaves) {
+                $resultado[$chave] = $registro;
+            } else {
+                $resultado[] = $registro;
+            }
+        }
+
+        return $resultado;
+    }
+
+    private static function compare($atual, $operador, $valor)
+    {
+        switch ($operador) {
+            case '=':
+            case '==':
+                return $atual == $valor;
+            case '===':
+                return $atual === $valor;
+            case '!=':
+            case '<>':
+                return $atual != $valor;
+            case '!==':
+                return $atual !== $valor;
+            case '<':
+                return $atual !== null && self::compareValues($atual, $valor) < 0;
+            case '<=':
+                return $atual !== null && self::compareValues($atual, $valor) <= 0;
+            case '>':
+                return $atual !== null && self::compareValues($atual, $valor) > 0;
+            case '>=':
+                return $atual !== null && self::compareValues($atual, $valor) >= 0;
+            case 'in':
+                return in_array($atual, self::wrap($valor), false);
+            case 'not in':
+                return !in_array($atual, self::wrap($valor), false);
+            case 'between':
+            case 'not between':
+                $limites = array_values(self::wrap($valor));
+
+                if (count($limites) !== 2) {
+                    throw new InvalidArgumentException(
+                        'O operador ' . $operador . ' exige [mínimo, máximo].'
+                    );
+                }
+
+                $dentro = $atual !== null
+                    && self::compareValues($atual, $limites[0]) >= 0
+                    && self::compareValues($atual, $limites[1]) <= 0;
+
+                return $operador === 'between' ? $dentro : !$dentro;
+            case 'like':
+            case 'not like':
+                $padrao = '/^' . strtr(
+                    preg_quote((string) $valor, '/'),
+                    ['%' => '.*', '_' => '.']
+                ) . '$/isu';
+                $casa = is_scalar($atual) && preg_match($padrao, (string) $atual) === 1;
+
+                return $operador === 'like' ? $casa : !$casa;
+            case 'contains':
+                return is_scalar($atual) && self::lowerText($valor) !== ''
+                    && strpos(self::lowerText($atual), self::lowerText($valor)) !== false;
+            case 'starts with':
+                return is_scalar($atual)
+                    && strpos(self::lowerText($atual), self::lowerText($valor)) === 0;
+            case 'ends with':
+                $fim = self::lowerText($valor);
+
+                return is_scalar($atual)
+                    && substr(self::lowerText($atual), -strlen($fim)) === $fim;
+        }
+
+        throw new InvalidArgumentException('Operador não suportado: ' . $operador . '.');
+    }
+
+    private static function compareValues($a, $b)
+    {
+        if ($a === $b) {
+            return 0;
+        }
+
+        if ($a === null) {
+            return -1;
+        }
+
+        if ($b === null) {
+            return 1;
+        }
+
+        if ($a instanceof DateTimeInterface && $b instanceof DateTimeInterface) {
+            return $a <=> $b;
+        }
+
+        if ($a instanceof BackedEnum) {
+            $a = $a->value;
+        }
+
+        if ($b instanceof BackedEnum) {
+            $b = $b->value;
+        }
+
+        if (is_string($a) && is_string($b) && !is_numeric($a) && !is_numeric($b)) {
+            return strnatcasecmp($a, $b);
+        }
+
+        return $a <=> $b;
+    }
+
+    private static function lowerText($valor)
+    {
+        $valor = (string) $valor;
+
+        return function_exists('mb_strtolower') ? mb_strtolower($valor, 'UTF-8') : strtolower($valor);
+    }
+
+    private static function numericValues(array $registros, $caminho)
+    {
+        $valores = [];
+
+        foreach ($registros as $indice => $registro) {
+            $valor = $caminho === null ? $registro : self::resolve($registro, $indice, $caminho);
+
+            if (is_int($valor) || is_float($valor)) {
+                $valores[] = $valor;
+            } elseif (is_string($valor) && is_numeric(trim($valor))) {
+                $valores[] = trim($valor) + 0;
+            }
+        }
+
+        return $valores;
+    }
+
+    private static function copyTree(array $nos, $filhos)
+    {
+        $resultado = [];
+
+        foreach ($nos as $no) {
+            if (is_object($no)) {
+                $no->{$filhos} = self::copyTree($no->{$filhos}, $filhos);
+            } else {
+                $no[$filhos] = self::copyTree($no[$filhos], $filhos);
+            }
+
+            $resultado[] = $no;
+        }
+
+        return $resultado;
+    }
 
     private static function convertValueToObject(
         $valor,
