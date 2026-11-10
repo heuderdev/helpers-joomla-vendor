@@ -7,6 +7,7 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'ApiResponseHelper' => $vendorDir . '/heuderdev/helpers/src/ApiResponseHelper.php',
+    'ArrayHelper' => $vendorDir . '/heuderdev/helpers/src/ArrayHelper.php',
     'AuditHelper' => $vendorDir . '/heuderdev/helpers/src/AuditHelper.php',
     'CacheHelper' => $vendorDir . '/heuderdev/helpers/src/CacheHelper.php',
     'ChunkHelper' => $vendorDir . '/heuderdev/helpers/src/ChunkUploadHelper.php',

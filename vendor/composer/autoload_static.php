@@ -31,6 +31,7 @@ class ComposerStaticInit964c0b4692e364c3b33365854c266d10
 
     public static $classMap = array (
         'ApiResponseHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ApiResponseHelper.php',
+        'ArrayHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ArrayHelper.php',
         'AuditHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/AuditHelper.php',
         'CacheHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/CacheHelper.php',
         'ChunkHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ChunkUploadHelper.php',
