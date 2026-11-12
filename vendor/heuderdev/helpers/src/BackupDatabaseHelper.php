@@ -14,7 +14,8 @@ if (!class_exists('DbConnectionHelper', false)) {
 }
 
 /*
- * Backup do banco MySQL/MariaDB em arquivo .sql (ou .sql.gz), em dois modos:
+ * Backup do banco MySQL/MariaDB ou PostgreSQL (10+) em arquivo .sql (ou
+ * .sql.gz), em PHP puro (sem mysqldump/pg_dump), em dois modos:
  *
  *   - schema: só a estrutura (tabelas vazias, views e triggers);
  *   - full:   estrutura + todos os dados.
@@ -34,7 +35,10 @@ if (!class_exists('DbConnectionHelper', false)) {
  * Opções (todas opcionais):
  *
  *   connection    nome registrado no DbConnectionHelper ou driver; padrão: Joomla
- *   tables        só estas tabelas/views (aceita '#__'); padrão: todas do banco
+ *   tables        só estas tabelas/views (aceita '#__'); padrão: todas do banco.
+ *                 No PostgreSQL aceita 'schema.tabela', e tabela particionada
+ *                 leva junto as partições
+ *   schemas       (PostgreSQL) só estes schemas; padrão: todos, menos os do sistema
  *   exclude       tabelas/views que ficam de fora
  *   exclude_data  tabelas que entram só com a estrutura (ex.: '#__session')
  *   prefix_only   true = só tabelas com o prefixo da conexão (ex.: jos_)
@@ -51,9 +55,15 @@ if (!class_exists('DbConnectionHelper', false)) {
  *   - no banco, só executa SELECT e SHOW (mais o fuso da sessão e a
  *     transação de leitura, que são desfeitos no final). Qualquer outro
  *     comando é recusado antes de chegar ao banco;
- *   - o arquivo gerado não tem DROP, DELETE, TRUNCATE, REPLACE nem ALTER:
- *     usa CREATE TABLE IF NOT EXISTS e INSERT IGNORE, então restaurar
- *     sobre um banco existente não remove nem sobrescreve registros;
+ *   - no PostgreSQL, além disso, tudo roda numa transação READ ONLY: o
+ *     próprio servidor recusa qualquer escrita, e a transação termina em
+ *     ROLLBACK. Se a conexão já estiver numa transação, o backup recusa;
+ *   - o arquivo gerado não tem DROP, DELETE, TRUNCATE, REPLACE nem UPDATE.
+ *     MySQL: CREATE TABLE IF NOT EXISTS e INSERT IGNORE. PostgreSQL:
+ *     IF NOT EXISTS, blocos que ignoram objeto já existente, ON CONFLICT
+ *     DO NOTHING, ALTER só para ADD CONSTRAINT (chave estrangeira) e
+ *     sequências que só avançam. Restaurar sobre um banco existente não
+ *     remove nem sobrescreve registros;
  *   - nunca sobrescreve nem remove arquivos: cada backup ganha um nome
  *     único, e um backup que falha no meio fica como ".parcial" para
  *     análise. Não há método de limpeza de backups antigos de propósito.
@@ -321,6 +331,10 @@ class BackupDatabaseHelper
         $db = self::connection($options);
         $list = [];
 
+        if (self::engine($db) === DbConnectionHelper::POSTGRESQL) {
+            return self::pgTables($db, $options);
+        }
+
         foreach (self::query($db, 'SHOW TABLE STATUS', 'loadAssocList') as $row) {
             $view = isset($row['Comment']) && strtoupper((string) $row['Comment']) === 'VIEW' && $row['Engine'] === null;
 
@@ -343,46 +357,88 @@ class BackupDatabaseHelper
     private static function plan($mode, array $options)
     {
         $db = self::connection($options);
+        $engine = self::engine($db);
         $prefix = method_exists($db, 'getPrefix') ? (string) $db->getPrefix() : '';
+
+        // Nome exibido => ['kind' => 'table'|'view', 'name' => nome sem schema, ...]
+        if ($engine === DbConnectionHelper::POSTGRESQL) {
+            $schemas = self::pgSchemas($db, $options);
+            $objects = self::pgObjects($db, $schemas);
+            $database = (string) self::pgValue($db, 'SELECT current_database()');
+        } else {
+            $schemas = [];
+            $objects = [];
+
+            foreach (self::query($db, 'SHOW FULL TABLES', 'loadRowList') as $row) {
+                $objects[$row[0]] = [
+                    'kind' => strtoupper((string) $row[1]) === 'VIEW' ? 'view' : 'table',
+                    'name' => $row[0],
+                ];
+            }
+
+            $database = (string) self::query($db, 'SELECT DATABASE()', 'loadResult');
+        }
+
+        $selected = array_keys($objects);
+
+        if (!empty($options['tables'])) {
+            $wanted = self::names($options['tables'], $prefix);
+            $selected = [];
+
+            foreach ($wanted as $name) {
+                $found = self::matchObjects($objects, $name);
+
+                if (!$found) {
+                    throw new InvalidArgumentException('Tabela não encontrada: ' . $name);
+                }
+
+                $selected = array_merge($selected, $found);
+            }
+
+            $selected = array_values(array_unique($selected));
+
+            // Tabela particionada (PostgreSQL) leva junto as partições, onde
+            // ficam os dados.
+            do {
+                $added = false;
+                $selectedOids = [];
+
+                foreach ($selected as $key) {
+                    if (isset($objects[$key]['oid'])) {
+                        $selectedOids[$objects[$key]['oid']] = true;
+                    }
+                }
+
+                foreach ($objects as $key => $object) {
+                    if (!empty($object['partition']) && isset($selectedOids[$object['parents'][0]]) && !in_array($key, $selected, true)) {
+                        $selected[] = $key;
+                        $added = true;
+                    }
+                }
+            } while ($added);
+        }
+
+        if (!empty($options['prefix_only']) && $prefix !== '') {
+            $selected = array_values(array_filter($selected, function ($key) use ($objects, $prefix) {
+                return strpos($objects[$key]['name'], $prefix) === 0;
+            }));
+        }
+
+        if (!empty($options['exclude'])) {
+            foreach (self::names($options['exclude'], $prefix) as $name) {
+                $selected = array_values(array_diff($selected, self::matchObjects($objects, $name)));
+            }
+        }
 
         $tables = [];
         $views = [];
 
-        foreach (self::query($db, 'SHOW FULL TABLES', 'loadRowList') as $row) {
-            if (strtoupper((string) $row[1]) === 'VIEW') {
-                $views[] = $row[0];
+        foreach ($selected as $key) {
+            if ($objects[$key]['kind'] === 'view') {
+                $views[] = $key;
             } else {
-                $tables[] = $row[0];
+                $tables[] = $key;
             }
-        }
-
-        $all = array_merge($tables, $views);
-
-        if (!empty($options['tables'])) {
-            $wanted = self::names($options['tables'], $prefix);
-            $missing = array_diff($wanted, $all);
-
-            if ($missing) {
-                throw new InvalidArgumentException('Tabela(s) não encontrada(s): ' . implode(', ', $missing));
-            }
-
-            $tables = array_values(array_intersect($tables, $wanted));
-            $views = array_values(array_intersect($views, $wanted));
-        }
-
-        if (!empty($options['prefix_only']) && $prefix !== '') {
-            $hasPrefix = function ($name) use ($prefix) {
-                return strpos($name, $prefix) === 0;
-            };
-
-            $tables = array_values(array_filter($tables, $hasPrefix));
-            $views = array_values(array_filter($views, $hasPrefix));
-        }
-
-        if (!empty($options['exclude'])) {
-            $exclude = self::names($options['exclude'], $prefix);
-            $tables = array_values(array_diff($tables, $exclude));
-            $views = array_values(array_diff($views, $exclude));
         }
 
         if (array_key_exists('views', $options) && !$options['views']) {
@@ -393,27 +449,67 @@ class BackupDatabaseHelper
             throw new InvalidArgumentException('Nenhuma tabela para o backup.');
         }
 
+        $excludeData = [];
+
+        foreach (empty($options['exclude_data']) ? [] : self::names($options['exclude_data'], $prefix) as $name) {
+            $excludeData = array_merge($excludeData, self::matchObjects($objects, $name));
+        }
+
         return [
             'db' => $db,
+            'engine' => $engine,
             'mode' => $mode,
-            'database' => (string) self::query($db, 'SELECT DATABASE()', 'loadResult'),
+            'database' => $database,
+            'schemas' => $schemas,
+            'objects' => $objects,
             'tables' => $tables,
             'views' => $views,
-            'exclude_data' => empty($options['exclude_data']) ? [] : self::names($options['exclude_data'], $prefix),
+            'exclude_data' => $excludeData,
             'triggers' => !array_key_exists('triggers', $options) || $options['triggers'],
             'consistent' => !array_key_exists('consistent', $options) || $options['consistent'],
         ];
+    }
+
+    /*
+     * 'clientes' casa com a tabela de mesmo nome em qualquer schema;
+     * 'vendas.clientes' só com a do schema vendas.
+     */
+    private static function matchObjects(array $objects, $name)
+    {
+        if (isset($objects[$name])) {
+            return [$name];
+        }
+
+        $found = [];
+
+        foreach ($objects as $key => $object) {
+            if ($object['name'] === $name
+                || (isset($object['schema']) && $object['schema'] . '.' . $object['name'] === $name)) {
+                $found[] = $key;
+            }
+        }
+
+        return $found;
     }
 
     private static function connection(array $options)
     {
         $db = DbConnectionHelper::resolve(isset($options['connection']) ? $options['connection'] : null);
 
-        if (!DbConnectionHelper::isMysql($db)) {
-            throw new RuntimeException('BackupDatabaseHelper suporta apenas MySQL/MariaDB.');
-        }
+        self::engine($db);
 
         return $db;
+    }
+
+    private static function engine($db)
+    {
+        $type = DbConnectionHelper::serverType($db);
+
+        if ($type !== DbConnectionHelper::MYSQL && $type !== DbConnectionHelper::POSTGRESQL) {
+            throw new RuntimeException('BackupDatabaseHelper suporta MySQL/MariaDB e PostgreSQL.');
+        }
+
+        return $type;
     }
 
     private static function names($names, $prefix)
@@ -460,6 +556,10 @@ class BackupDatabaseHelper
 
         if (function_exists('set_time_limit')) {
             @set_time_limit(0);
+        }
+
+        if ($plan['engine'] === DbConnectionHelper::POSTGRESQL) {
+            return self::pgDump($plan, $writer);
         }
 
         $stats = ['tabelas' => 0, 'views' => 0, 'triggers' => 0, 'linhas' => 0, 'snapshot' => false];
@@ -518,8 +618,9 @@ class BackupDatabaseHelper
 
                 self::write($writer, self::footer());
             } finally {
+                // Transação só de leitura: desfaz em vez de confirmar.
                 if ($stats['snapshot']) {
-                    self::session($db, 'COMMIT');
+                    self::session($db, 'ROLLBACK');
                 }
             }
         } finally {
@@ -806,6 +907,1074 @@ class BackupDatabaseHelper
     }
 
     // ------------------------------------------------------------------
+    // PostgreSQL
+    //
+    // O PostgreSQL não tem SHOW CREATE TABLE: a estrutura é montada a
+    // partir do catálogo (pg_catalog). Tudo é lido dentro de uma transação
+    // READ ONLY, em que o próprio servidor recusa qualquer escrita, e que
+    // é desfeita (ROLLBACK) no final.
+    //
+    // Ordem do arquivo: schemas, extensões, tipos, funções, sequências,
+    // tabelas, dados, valores das sequências, índices, chaves
+    // estrangeiras, triggers e views.
+    // ------------------------------------------------------------------
+
+    private static function pgSchemas($db, array $options)
+    {
+        $rows = self::pgRows(
+            $db,
+            "SELECT n.oid, n.nspname FROM pg_catalog.pg_namespace n
+             WHERE n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'information_schema'
+               AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                               WHERE d.classid = 'pg_catalog.pg_namespace'::pg_catalog.regclass
+                                 AND d.objid = n.oid AND d.deptype = 'e')
+             ORDER BY n.nspname"
+        );
+
+        $schemas = [];
+
+        foreach ($rows as $row) {
+            $schemas[(int) $row['oid']] = $row['nspname'];
+        }
+
+        if (!empty($options['schemas'])) {
+            $wanted = array_map('strval', (array) $options['schemas']);
+            $missing = array_diff($wanted, $schemas);
+
+            if ($missing) {
+                throw new InvalidArgumentException('Schema(s) não encontrado(s): ' . implode(', ', $missing));
+            }
+
+            $schemas = array_intersect($schemas, $wanted);
+        }
+
+        if (!$schemas) {
+            throw new InvalidArgumentException('Nenhum schema para o backup.');
+        }
+
+        return $schemas;
+    }
+
+    private static function pgObjects($db, array $schemas)
+    {
+        if ((int) self::pgValue($db, "SELECT pg_catalog.current_setting('server_version_num')") < 100000) {
+            throw new RuntimeException('BackupDatabaseHelper precisa do PostgreSQL 10 ou mais novo.');
+        }
+
+        $rows = self::pgRows(
+            $db,
+            "SELECT c.oid, n.nspname, c.relname, c.relkind, c.relpersistence, c.relispartition,
+                    pg_catalog.pg_get_expr(c.relpartbound, c.oid) AS partbound,
+                    CASE WHEN c.relkind = 'p' THEN pg_catalog.pg_get_partkeydef(c.oid) END AS partkey,
+                    pg_catalog.array_to_string(c.reloptions, ', ') AS options,
+                    (SELECT pg_catalog.string_agg(i.inhparent::text, ',' ORDER BY i.inhseqno)
+                       FROM pg_catalog.pg_inherits i WHERE i.inhrelid = c.oid) AS parents
+             FROM pg_catalog.pg_class c
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind IN ('r', 'p', 'v', 'm') AND c.relnamespace IN (" . self::pgOids(array_keys($schemas)) . ")
+               AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                               WHERE d.classid = 'pg_catalog.pg_class'::pg_catalog.regclass
+                                 AND d.objid = c.oid AND d.deptype = 'e')
+             ORDER BY n.nspname, c.relname"
+        );
+
+        $objects = [];
+
+        foreach ($rows as $row) {
+            $key = $row['nspname'] === 'public' ? $row['relname'] : $row['nspname'] . '.' . $row['relname'];
+
+            $objects[$key] = [
+                'kind' => in_array($row['relkind'], ['v', 'm'], true) ? 'view' : 'table',
+                'name' => $row['relname'],
+                'schema' => $row['nspname'],
+                'oid' => (int) $row['oid'],
+                'relkind' => $row['relkind'],
+                'unlogged' => $row['relpersistence'] === 'u',
+                'partition' => self::pgBool($row['relispartition']),
+                'partbound' => $row['partbound'],
+                'partkey' => $row['partkey'],
+                'options' => (string) $row['options'],
+                'parents' => $row['parents'] === null || $row['parents'] === '' ? [] : array_map('intval', explode(',', $row['parents'])),
+                'qualified' => self::pgIdent($row['nspname']) . '.' . self::pgIdent($row['relname']),
+            ];
+        }
+
+        return $objects;
+    }
+
+    private static function pgTables($db, array $options)
+    {
+        $schemas = self::pgSchemas($db, $options);
+        $list = [];
+
+        $rows = self::pgRows(
+            $db,
+            "SELECT n.nspname, c.relname, c.relkind, c.reltuples::bigint AS rows,
+                    pg_catalog.pg_total_relation_size(c.oid) AS size
+             FROM pg_catalog.pg_class c
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind IN ('r', 'p', 'v', 'm') AND c.relnamespace IN (" . self::pgOids(array_keys($schemas)) . ")
+             ORDER BY n.nspname, c.relname"
+        );
+
+        foreach ($rows as $row) {
+            $list[] = [
+                'nome' => $row['nspname'] === 'public' ? $row['relname'] : $row['nspname'] . '.' . $row['relname'],
+                'tipo' => in_array($row['relkind'], ['v', 'm'], true) ? 'view' : 'tabela',
+                'engine' => null,
+                'linhas_aprox' => (int) $row['rows'] < 0 || in_array($row['relkind'], ['v', 'p'], true) ? null : (int) $row['rows'],
+                'tamanho_bytes' => (int) $row['size'],
+            ];
+        }
+
+        return $list;
+    }
+
+    private static function pgDump(array $plan, array &$writer)
+    {
+        $db = $plan['db'];
+        $stats = ['tabelas' => 0, 'views' => 0, 'triggers' => 0, 'linhas' => 0, 'snapshot' => false];
+
+        self::pgBegin($db, $plan['consistent']);
+        $stats['snapshot'] = (bool) $plan['consistent'];
+
+        try {
+            $version = (int) self::pgValue($db, "SELECT pg_catalog.current_setting('server_version_num')");
+            $schemaOids = self::pgOids(array_keys($plan['schemas']));
+            $full = $plan['mode'] === self::FULL;
+            $tag = '$bkp_' . bin2hex(random_bytes(4)) . '$';
+
+            $byOid = [];
+
+            foreach ($plan['objects'] as $key => $object) {
+                $byOid[$object['oid']] = $key;
+            }
+
+            $tables = self::pgOrderTables($plan, $byOid);
+            $tableOids = [];
+
+            foreach ($tables as $key) {
+                $tableOids[$plan['objects'][$key]['oid']] = true;
+            }
+
+            self::write($writer, self::pgHeader($plan, $db));
+
+            // Schemas e extensões
+            $schemaNames = array_values($plan['schemas']);
+            $extensions = self::pgRows(
+                $db,
+                "SELECT e.extname, n.nspname FROM pg_catalog.pg_extension e
+                 JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+                 WHERE e.extname <> 'plpgsql' ORDER BY e.oid"
+            );
+
+            foreach ($extensions as $extension) {
+                $schemaNames[] = $extension['nspname'];
+            }
+
+            foreach (array_unique($schemaNames) as $schema) {
+                self::pgStatement($writer, 'CREATE SCHEMA IF NOT EXISTS ' . self::pgIdent($schema) . ';', $tag);
+            }
+
+            self::write($writer, "\n");
+
+            foreach ($extensions as $extension) {
+                self::pgStatement(
+                    $writer,
+                    'CREATE EXTENSION IF NOT EXISTS ' . self::pgIdent($extension['extname']) .
+                    ' WITH SCHEMA ' . self::pgIdent($extension['nspname']) . ';',
+                    $tag
+                );
+            }
+
+            // Tipos (enum, domínio e composto) e funções
+            foreach (self::pgTypes($db, $schemaOids) as $type) {
+                self::pgStatement($writer, self::pgGuarded($type, $tag), $tag);
+            }
+
+            $kindFilter = $version >= 110000 ? "p.prokind IN ('f', 'p')" : 'NOT p.proisagg AND NOT p.proiswindow';
+
+            $functions = self::pgRows(
+                $db,
+                "SELECT p.oid, pg_catalog.pg_get_functiondef(p.oid) AS def
+                 FROM pg_catalog.pg_proc p
+                 WHERE p.pronamespace IN (" . $schemaOids . ") AND " . $kindFilter . "
+                   AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                                   WHERE d.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+                                     AND d.objid = p.oid AND d.deptype = 'e')
+                 ORDER BY p.oid"
+            );
+
+            foreach ($functions as $function) {
+                // Sem OR REPLACE: função que já existe no destino é mantida.
+                $def = preg_replace('/^CREATE OR REPLACE (FUNCTION|PROCEDURE)/', 'CREATE $1', trim($function['def']));
+                self::pgStatement($writer, self::pgGuarded($def, $tag), $tag);
+            }
+
+            // Sequências avulsas (as de colunas IDENTITY nascem com a tabela)
+            $sequences = self::pgRows(
+                $db,
+                "SELECT c.oid, n.nspname, c.relname, pg_catalog.format_type(s.seqtypid, NULL) AS type,
+                        s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle
+                 FROM pg_catalog.pg_class c
+                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                 JOIN pg_catalog.pg_sequence s ON s.seqrelid = c.oid
+                 WHERE c.relkind = 'S' AND c.relnamespace IN (" . $schemaOids . ")
+                   AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                                   WHERE d.classid = 'pg_catalog.pg_class'::pg_catalog.regclass
+                                     AND d.objid = c.oid AND d.deptype IN ('i', 'e'))
+                 ORDER BY c.oid"
+            );
+
+            if ($sequences) {
+                self::write($writer, "\n--\n-- Sequências\n--\n\n");
+            }
+
+            foreach ($sequences as $sequence) {
+                self::pgStatement(
+                    $writer,
+                    'CREATE SEQUENCE IF NOT EXISTS ' . self::pgIdent($sequence['nspname']) . '.' . self::pgIdent($sequence['relname']) .
+                    ' AS ' . $sequence['type'] . self::pgSequenceOptions($sequence) . ';',
+                    $tag
+                );
+            }
+
+            // Tabelas
+            $columns = [];
+
+            foreach ($tables as $key) {
+                $object = $plan['objects'][$key];
+                $columns[$key] = self::pgColumns($db, $object['oid'], $version);
+
+                self::write($writer, "\n--\n-- Tabela " . $key . "\n--\n\n");
+                self::pgStatement($writer, self::pgCreateTable($db, $plan['objects'], $byOid, $key, $columns[$key], $version), $tag);
+                $stats['tabelas']++;
+            }
+
+            // Dados
+            if ($full) {
+                foreach ($tables as $key) {
+                    if ($plan['objects'][$key]['relkind'] === 'r' && !in_array($key, $plan['exclude_data'], true)) {
+                        $stats['linhas'] += self::pgDumpRows($db, $plan['objects'][$key], $columns[$key], $writer);
+                    }
+                }
+
+                // Sequências continuam de onde pararam, sem nunca voltar.
+                $setvals = '';
+
+                foreach ($sequences as $sequence) {
+                    $setvals .= self::pgSetval(
+                        $db,
+                        self::pgIdent($sequence['nspname']) . '.' . self::pgIdent($sequence['relname']),
+                        self::pgLiteral(self::pgIdent($sequence['nspname']) . '.' . self::pgIdent($sequence['relname'])) . '::pg_catalog.regclass',
+                        (int) $sequence['seqincrement']
+                    );
+                }
+
+                foreach ($tables as $key) {
+                    foreach ($columns[$key] as $column) {
+                        if ($column['identity_sequence'] !== null) {
+                            $setvals .= self::pgSetval(
+                                $db,
+                                $column['identity_sequence'],
+                                'pg_catalog.pg_get_serial_sequence(' . self::pgLiteral($plan['objects'][$key]['qualified']) .
+                                    ', ' . self::pgLiteral($column['name']) . ')::pg_catalog.regclass',
+                                (int) $column['identity']['seqincrement']
+                            );
+                        }
+                    }
+                }
+
+                if ($setvals !== '') {
+                    self::write($writer, "--\n-- Valores das sequências\n--\n\n" . $setvals . "\n");
+                }
+            }
+
+            // Índices e chaves estrangeiras
+            self::write($writer, "--\n-- Índices\n--\n\n");
+
+            foreach ($tables as $key) {
+                foreach (self::pgIndexes($db, $plan['objects'][$key]['oid'], $version) as $index) {
+                    self::pgStatement($writer, $index, $tag);
+                }
+            }
+
+            self::write($writer, "\n--\n-- Chaves estrangeiras\n--\n\n");
+
+            foreach ($tables as $key) {
+                $object = $plan['objects'][$key];
+                $foreign = self::pgRows(
+                    $db,
+                    "SELECT c.conname, c.confrelid, pg_catalog.pg_get_constraintdef(c.oid) AS def
+                     FROM pg_catalog.pg_constraint c
+                     WHERE c.conrelid = " . $object['oid'] . " AND c.contype = 'f' AND c.conislocal" .
+                     ($version >= 110000 ? ' AND c.conparentid = 0' : '') . "
+                     ORDER BY c.conname"
+                );
+
+                foreach ($foreign as $constraint) {
+                    if (!isset($tableOids[(int) $constraint['confrelid']])) {
+                        self::write($writer, '-- Chave ' . $constraint['conname'] . ' de ' . $key . " não incluída: a tabela referenciada está fora do backup.\n");
+                        continue;
+                    }
+
+                    self::pgStatement(
+                        $writer,
+                        self::pgGuarded(
+                            'ALTER TABLE ' . $object['qualified'] . ' ADD CONSTRAINT ' . self::pgIdent($constraint['conname']) . ' ' . $constraint['def'],
+                            $tag
+                        ),
+                        $tag
+                    );
+                }
+            }
+
+            // Triggers (depois dos dados: não disparam na restauração)
+            if ($plan['triggers']) {
+                foreach ($tables as $key) {
+                    $stats['triggers'] += self::pgTriggers($db, $plan['objects'][$key]['oid'], $version, $writer, $tag);
+                }
+            }
+
+            // Views, na ordem de dependência
+            foreach (self::pgOrderViews($db, $plan) as $key) {
+                $object = $plan['objects'][$key];
+                $def = rtrim(trim((string) self::pgValue($db, 'SELECT pg_catalog.pg_get_viewdef(' . $object['oid'] . ', true)')), ';');
+                $with = $object['options'] !== '' ? ' WITH (' . $object['options'] . ')' : '';
+
+                self::write($writer, "\n--\n-- View " . $key . "\n--\n\n");
+
+                if ($object['relkind'] === 'm') {
+                    self::pgStatement(
+                        $writer,
+                        'CREATE MATERIALIZED VIEW IF NOT EXISTS ' . $object['qualified'] . $with . " AS\n" . $def .
+                        ($full ? "\nWITH DATA;" : "\nWITH NO DATA;"),
+                        $tag
+                    );
+
+                    foreach (self::pgIndexes($db, $object['oid'], $version) as $index) {
+                        self::pgStatement($writer, $index, $tag);
+                    }
+                } else {
+                    self::pgStatement($writer, self::pgGuarded('CREATE VIEW ' . $object['qualified'] . $with . " AS\n" . $def, $tag), $tag);
+                }
+
+                if ($plan['triggers']) {
+                    $stats['triggers'] += self::pgTriggers($db, $object['oid'], $version, $writer, $tag);
+                }
+
+                $stats['views']++;
+            }
+
+            self::write($writer, "\n-- Fim do backup\n");
+        } finally {
+            self::pgSession($db, 'ROLLBACK');
+        }
+
+        return $stats;
+    }
+
+    /*
+     * Abre a transação de leitura. Se a conexão já estiver dentro de uma
+     * transação, recusa: não daria para garantir o modo somente leitura,
+     * e encerrar a transação de outra rotina não é papel do backup.
+     */
+    private static function pgBegin($db, $consistent)
+    {
+        $connection = self::pgNative($db);
+
+        $busy = $connection instanceof PDO
+            ? $connection->inTransaction()
+            : pg_transaction_status($connection) !== PGSQL_TRANSACTION_IDLE;
+
+        if ($busy) {
+            throw new RuntimeException('Há uma transação aberta nesta conexão. Chame o backup fora de transações.');
+        }
+
+        self::pgSession($db, 'BEGIN TRANSACTION ISOLATION LEVEL ' . ($consistent ? 'REPEATABLE READ' : 'READ COMMITTED') . ', READ ONLY');
+
+        // SET LOCAL vale só até o ROLLBACK: a sessão volta ao normal sozinha.
+        $settings = [
+            'search_path' => 'pg_catalog',
+            'TimeZone' => 'UTC',
+            'DateStyle' => 'ISO, YMD',
+            'IntervalStyle' => 'postgres',
+            'extra_float_digits' => '3',
+            'bytea_output' => 'hex',
+            'standard_conforming_strings' => 'on',
+            'client_encoding' => 'UTF8',
+        ];
+
+        try {
+            if ((string) self::pgValue($db, "SELECT pg_catalog.current_setting('transaction_read_only')") !== 'on') {
+                throw new RuntimeException('Não foi possível abrir a transação somente leitura.');
+            }
+
+            foreach ($settings as $name => $value) {
+                self::pgSession($db, 'SET LOCAL ' . $name . " = '" . $value . "'");
+            }
+        } catch (Throwable $error) {
+            self::pgSession($db, 'ROLLBACK');
+
+            throw $error;
+        }
+    }
+
+    private static function pgHeader(array $plan, $db)
+    {
+        return "-- Backup gerado por BackupDatabaseHelper\n" .
+            '-- Banco: ' . $plan['database'] . " (PostgreSQL)\n" .
+            '-- Servidor: ' . self::pgValue($db, "SELECT pg_catalog.current_setting('server_version')") . "\n" .
+            '-- Schemas: ' . implode(', ', $plan['schemas']) . "\n" .
+            '-- Modo: ' . ($plan['mode'] === self::FULL ? 'estrutura + dados' : 'somente estrutura (tabelas vazias)') . "\n" .
+            '-- Gerado em: ' . gmdate('Y-m-d H:i:s') . " UTC\n" .
+            "--\n" .
+            "-- Este arquivo NÃO apaga nada ao ser restaurado: não há DROP, DELETE,\n" .
+            "-- TRUNCATE nem UPDATE, e nada usa OR REPLACE.\n" .
+            "--   - tabelas, índices e sequências usam IF NOT EXISTS;\n" .
+            "--   - tipos, funções, views, triggers e chaves estrangeiras ficam em blocos\n" .
+            "--     DO que ignoram o objeto se ele já existir;\n" .
+            "--   - os dados usam ON CONFLICT DO NOTHING (registros existentes ficam);\n" .
+            "--   - o único ALTER é ADD CONSTRAINT, que só acrescenta chave estrangeira;\n" .
+            "--   - sequências só avançam (setval nunca volta o contador).\n" .
+            "-- Atenção: tabelas sem chave primária/única recebem as linhas de novo\n" .
+            "-- se o arquivo for restaurado duas vezes no mesmo banco.\n" .
+            "--\n" .
+            "-- Restaurar: psql -d banco_destino -f arquivo.sql\n\n" .
+            "SET client_encoding = 'UTF8';\n" .
+            "SET standard_conforming_strings = on;\n" .
+            "SET check_function_bodies = false;\n" .
+            "SET client_min_messages = warning;\n" .
+            "SELECT pg_catalog.set_config('search_path', '', false);\n\n";
+    }
+
+    /*
+     * Pais antes dos filhos (partições e herança).
+     */
+    private static function pgOrderTables(array $plan, array $byOid)
+    {
+        $pending = $plan['tables'];
+        $selected = array_flip($pending);
+        $ordered = [];
+
+        while ($pending) {
+            $progress = false;
+
+            foreach ($pending as $i => $key) {
+                $ready = true;
+
+                foreach ($plan['objects'][$key]['parents'] as $parent) {
+                    if (isset($byOid[$parent]) && isset($selected[$byOid[$parent]]) && !in_array($byOid[$parent], $ordered, true)) {
+                        $ready = false;
+                    }
+                }
+
+                if ($ready) {
+                    $ordered[] = $key;
+                    unset($pending[$i]);
+                    $progress = true;
+                }
+            }
+
+            if (!$progress) {
+                $ordered = array_merge($ordered, array_values($pending));
+                break;
+            }
+        }
+
+        return $ordered;
+    }
+
+    /*
+     * Views que dependem de outras views vêm depois delas.
+     */
+    private static function pgOrderViews($db, array $plan)
+    {
+        if (!$plan['views']) {
+            return [];
+        }
+
+        $oidToKey = [];
+
+        foreach ($plan['views'] as $key) {
+            $oidToKey[$plan['objects'][$key]['oid']] = $key;
+        }
+
+        $deps = [];
+
+        $rows = self::pgRows(
+            $db,
+            "SELECT DISTINCT r.ev_class AS view, d.refobjid AS dep
+             FROM pg_catalog.pg_rewrite r
+             JOIN pg_catalog.pg_depend d ON d.objid = r.oid
+                  AND d.classid = 'pg_catalog.pg_rewrite'::pg_catalog.regclass
+                  AND d.refclassid = 'pg_catalog.pg_class'::pg_catalog.regclass
+             WHERE d.refobjid <> r.ev_class AND r.ev_class IN (" . self::pgOids(array_keys($oidToKey)) . ")"
+        );
+
+        foreach ($rows as $row) {
+            if (isset($oidToKey[(int) $row['dep']])) {
+                $deps[$oidToKey[(int) $row['view']]][] = $oidToKey[(int) $row['dep']];
+            }
+        }
+
+        $pending = $plan['views'];
+        $ordered = [];
+
+        while ($pending) {
+            $progress = false;
+
+            foreach ($pending as $i => $key) {
+                if (!isset($deps[$key]) || !array_diff($deps[$key], $ordered)) {
+                    $ordered[] = $key;
+                    unset($pending[$i]);
+                    $progress = true;
+                }
+            }
+
+            if (!$progress) {
+                $ordered = array_merge($ordered, array_values($pending));
+                break;
+            }
+        }
+
+        return $ordered;
+    }
+
+    private static function pgTypes($db, $schemaOids)
+    {
+        $rows = self::pgRows(
+            $db,
+            "SELECT t.oid, t.typtype, t.typrelid, t.typnotnull,
+                    pg_catalog.format_type(t.oid, NULL) AS name,
+                    pg_catalog.format_type(t.typbasetype, t.typtypmod) AS base,
+                    t.typdefault AS def
+             FROM pg_catalog.pg_type t
+             WHERE t.typnamespace IN (" . $schemaOids . ")
+               AND (t.typtype IN ('e', 'd')
+                    OR (t.typtype = 'c' AND (SELECT c.relkind FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid) = 'c'))
+               AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                               WHERE d.classid = 'pg_catalog.pg_type'::pg_catalog.regclass
+                                 AND d.objid = t.oid AND d.deptype = 'e')
+             ORDER BY t.oid"
+        );
+
+        $types = [];
+
+        foreach ($rows as $row) {
+            $oid = (int) $row['oid'];
+
+            if ($row['typtype'] === 'e') {
+                $labels = self::pgValue(
+                    $db,
+                    'SELECT pg_catalog.string_agg(pg_catalog.quote_literal(enumlabel), \', \' ORDER BY enumsortorder)
+                     FROM pg_catalog.pg_enum WHERE enumtypid = ' . $oid
+                );
+
+                $types[] = 'CREATE TYPE ' . $row['name'] . ' AS ENUM (' . $labels . ')';
+            } elseif ($row['typtype'] === 'd') {
+                $sql = 'CREATE DOMAIN ' . $row['name'] . ' AS ' . $row['base'];
+
+                if ($row['def'] !== null) {
+                    $sql .= ' DEFAULT ' . $row['def'];
+                }
+
+                if (self::pgBool($row['typnotnull'])) {
+                    $sql .= ' NOT NULL';
+                }
+
+                $constraints = self::pgRows(
+                    $db,
+                    "SELECT conname, pg_catalog.pg_get_constraintdef(oid) AS def
+                     FROM pg_catalog.pg_constraint WHERE contypid = " . $oid . " AND contype = 'c' ORDER BY conname"
+                );
+
+                foreach ($constraints as $constraint) {
+                    $sql .= ' CONSTRAINT ' . self::pgIdent($constraint['conname']) . ' ' . $constraint['def'];
+                }
+
+                $types[] = $sql;
+            } else {
+                $attributes = self::pgRows(
+                    $db,
+                    'SELECT attname, pg_catalog.format_type(atttypid, atttypmod) AS type
+                     FROM pg_catalog.pg_attribute
+                     WHERE attrelid = ' . (int) $row['typrelid'] . ' AND attnum > 0 AND NOT attisdropped
+                     ORDER BY attnum'
+                );
+
+                $fields = [];
+
+                foreach ($attributes as $attribute) {
+                    $fields[] = self::pgIdent($attribute['attname']) . ' ' . $attribute['type'];
+                }
+
+                $types[] = 'CREATE TYPE ' . $row['name'] . ' AS (' . implode(', ', $fields) . ')';
+            }
+        }
+
+        return $types;
+    }
+
+    private static function pgColumns($db, $oid, $version)
+    {
+        $rows = self::pgRows(
+            $db,
+            "SELECT a.attnum, a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
+                    a.attnotnull, a.attislocal, a.attidentity,
+                    " . ($version >= 120000 ? 'a.attgenerated' : "''") . " AS attgenerated,
+                    pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) AS def,
+                    CASE WHEN a.attcollation <> 0 AND a.attcollation <> t.typcollation
+                         THEN pg_catalog.quote_ident(cn.nspname) || '.' || pg_catalog.quote_ident(co.collname) END AS collation
+             FROM pg_catalog.pg_attribute a
+             JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+             LEFT JOIN pg_catalog.pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+             LEFT JOIN pg_catalog.pg_collation co ON co.oid = a.attcollation
+             LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = co.collnamespace
+             WHERE a.attrelid = " . (int) $oid . " AND a.attnum > 0 AND NOT a.attisdropped
+             ORDER BY a.attnum"
+        );
+
+        $identities = [];
+
+        foreach (self::pgRows(
+            $db,
+            "SELECT d.refobjsubid AS attnum, n.nspname, c.relname,
+                    s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle
+             FROM pg_catalog.pg_depend d
+             JOIN pg_catalog.pg_sequence s ON s.seqrelid = d.objid
+             JOIN pg_catalog.pg_class c ON c.oid = s.seqrelid
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+             WHERE d.classid = 'pg_catalog.pg_class'::pg_catalog.regclass
+               AND d.refclassid = 'pg_catalog.pg_class'::pg_catalog.regclass
+               AND d.refobjid = " . (int) $oid . " AND d.deptype = 'i'"
+        ) as $row) {
+            $identities[(int) $row['attnum']] = $row;
+        }
+
+        $columns = [];
+
+        foreach ($rows as $row) {
+            $identity = isset($identities[(int) $row['attnum']]) && in_array($row['attidentity'], ['a', 'd'], true)
+                ? $identities[(int) $row['attnum']]
+                : null;
+
+            $columns[] = [
+                'name' => $row['attname'],
+                'type' => $row['type'],
+                'not_null' => self::pgBool($row['attnotnull']),
+                'local' => self::pgBool($row['attislocal']),
+                'default' => $row['def'],
+                'generated' => (string) $row['attgenerated'] === 's',
+                'identity_mode' => $identity !== null ? $row['attidentity'] : '',
+                'identity' => $identity,
+                'identity_sequence' => $identity !== null ? self::pgIdent($identity['nspname']) . '.' . self::pgIdent($identity['relname']) : null,
+                'collation' => $row['collation'],
+            ];
+        }
+
+        return $columns;
+    }
+
+    private static function pgCreateTable($db, array $objects, array $byOid, $key, array $columns, $version)
+    {
+        $object = $objects[$key];
+        $lines = [];
+        $inherited = $object['parents'] && !$object['partition'];
+
+        if (!$object['partition']) {
+            foreach ($columns as $column) {
+                // Na herança, colunas herdadas vêm do pai.
+                if ($inherited && !$column['local']) {
+                    continue;
+                }
+
+                $line = self::pgIdent($column['name']) . ' ' . $column['type'];
+
+                if ($column['collation'] !== null) {
+                    $line .= ' COLLATE ' . $column['collation'];
+                }
+
+                if ($column['generated']) {
+                    $line .= ' GENERATED ALWAYS AS (' . $column['default'] . ') STORED';
+                } elseif ($column['identity'] !== null) {
+                    $line .= ' GENERATED ' . ($column['identity_mode'] === 'a' ? 'ALWAYS' : 'BY DEFAULT') .
+                        ' AS IDENTITY (' . trim(self::pgSequenceOptions($column['identity'])) . ')';
+                } elseif ($column['default'] !== null) {
+                    $line .= ' DEFAULT ' . $column['default'];
+                }
+
+                if ($column['not_null']) {
+                    $line .= ' NOT NULL';
+                }
+
+                $lines[] = $line;
+            }
+        }
+
+        $constraints = self::pgRows(
+            $db,
+            "SELECT conname, pg_catalog.pg_get_constraintdef(oid) AS def
+             FROM pg_catalog.pg_constraint
+             WHERE conrelid = " . $object['oid'] . " AND contype IN ('p', 'u', 'c', 'x') AND conislocal" .
+             ($version >= 110000 ? ' AND conparentid = 0' : '') . "
+             ORDER BY CASE contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 WHEN 'c' THEN 2 ELSE 3 END, conname"
+        );
+
+        foreach ($constraints as $constraint) {
+            $lines[] = 'CONSTRAINT ' . self::pgIdent($constraint['conname']) . ' ' . $constraint['def'];
+        }
+
+        $sql = 'CREATE ' . ($object['unlogged'] ? 'UNLOGGED ' : '') . 'TABLE IF NOT EXISTS ' . $object['qualified'];
+
+        if ($object['partition']) {
+            $parent = isset($byOid[$object['parents'][0]]) ? $objects[$byOid[$object['parents'][0]]]['qualified'] : null;
+
+            if ($parent === null) {
+                throw new RuntimeException('Partição ' . $key . ' sem a tabela principal no backup.');
+            }
+
+            $sql .= ' PARTITION OF ' . $parent . ($lines ? " (\n    " . implode(",\n    ", $lines) . "\n)" : '') . ' ' . $object['partbound'];
+        } else {
+            $sql .= " (\n    " . implode(",\n    ", $lines) . "\n)";
+
+            if ($inherited) {
+                $parents = [];
+
+                foreach ($object['parents'] as $parentOid) {
+                    if (!isset($byOid[$parentOid])) {
+                        throw new RuntimeException('Tabela ' . $key . ' herda de uma tabela fora do backup.');
+                    }
+
+                    $parents[] = $objects[$byOid[$parentOid]]['qualified'];
+                }
+
+                $sql .= ' INHERITS (' . implode(', ', $parents) . ')';
+            }
+        }
+
+        if ($object['relkind'] === 'p') {
+            $sql .= ' PARTITION BY ' . $object['partkey'];
+        }
+
+        if ($object['options'] !== '') {
+            $sql .= ' WITH (' . $object['options'] . ')';
+        }
+
+        return $sql . ';';
+    }
+
+    private static function pgSequenceOptions(array $sequence)
+    {
+        foreach (['seqstart', 'seqincrement', 'seqmin', 'seqmax', 'seqcache'] as $field) {
+            if (!preg_match('/^-?\d+$/', (string) $sequence[$field])) {
+                throw new RuntimeException('Valor de sequência inesperado no catálogo.');
+            }
+        }
+
+        return ' INCREMENT BY ' . $sequence['seqincrement'] .
+            ' MINVALUE ' . $sequence['seqmin'] .
+            ' MAXVALUE ' . $sequence['seqmax'] .
+            ' START WITH ' . $sequence['seqstart'] .
+            ' CACHE ' . $sequence['seqcache'] .
+            (self::pgBool($sequence['seqcycle']) ? ' CYCLE' : ' NO CYCLE');
+    }
+
+    /*
+     * setval só quando o contador do destino está atrás do backup.
+     */
+    private static function pgSetval($db, $sequenceName, $target, $increment)
+    {
+        $row = self::pgRow($db, 'SELECT last_value::text AS last_value, is_called FROM ' . $sequenceName);
+
+        if (!$row || !self::pgBool($row['is_called']) || $increment <= 0 || !preg_match('/^-?\d+$/', (string) $row['last_value'])) {
+            return '';
+        }
+
+        $value = $row['last_value'];
+
+        return 'SELECT pg_catalog.setval(s, ' . $value . ', true) FROM (SELECT ' . $target . ' AS s) AS seq' .
+            ' WHERE COALESCE(pg_catalog.pg_sequence_last_value(s), 0) < ' . $value . ";\n";
+    }
+
+    private static function pgIndexes($db, $oid, $version)
+    {
+        $rows = self::pgRows(
+            $db,
+            "SELECT pg_catalog.pg_get_indexdef(i.indexrelid) AS def
+             FROM pg_catalog.pg_index i
+             JOIN pg_catalog.pg_class ic ON ic.oid = i.indexrelid
+             WHERE i.indrelid = " . (int) $oid . "
+               AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint c
+                               WHERE c.conindid = i.indexrelid AND c.contype IN ('p', 'u', 'x'))" .
+               ($version >= 110000 ? ' AND NOT ic.relispartition' : '') . "
+             ORDER BY ic.relname"
+        );
+
+        $indexes = [];
+
+        foreach ($rows as $row) {
+            $def = preg_replace('/^CREATE (UNIQUE )?INDEX /', 'CREATE $1INDEX IF NOT EXISTS ', trim($row['def']), 1);
+
+            // Em tabela particionada, cria o índice também nas partições.
+            $indexes[] = preg_replace('/ ON ONLY /', ' ON ', $def, 1) . ';';
+        }
+
+        return $indexes;
+    }
+
+    private static function pgTriggers($db, $oid, $version, array &$writer, $tag)
+    {
+        $rows = self::pgRows(
+            $db,
+            "SELECT t.tgname, pg_catalog.pg_get_triggerdef(t.oid) AS def
+             FROM pg_catalog.pg_trigger t
+             WHERE t.tgrelid = " . (int) $oid . " AND NOT t.tgisinternal" .
+             ($version >= 130000 ? ' AND t.tgparentid = 0' : '') . "
+             ORDER BY t.tgname"
+        );
+
+        foreach ($rows as $row) {
+            self::write($writer, '-- Trigger ' . $row['tgname'] . "\n");
+            self::pgStatement($writer, self::pgGuarded(trim($row['def']), $tag), $tag);
+        }
+
+        return count($rows);
+    }
+
+    /*
+     * Lê a tabela com um cursor (uma passada só, sem ORDER BY nem OFFSET)
+     * e escreve INSERT ... ON CONFLICT DO NOTHING. Todo valor vem como
+     * texto, que o PostgreSQL converte de volta para o tipo da coluna.
+     */
+    private static function pgDumpRows($db, array $object, array $columns, array &$writer)
+    {
+        $names = [];
+        $expressions = [];
+        $overriding = false;
+
+        foreach ($columns as $column) {
+            // Colunas geradas são calculadas pelo banco e não aceitam INSERT.
+            if ($column['generated']) {
+                continue;
+            }
+
+            if ($column['identity_mode'] === 'a') {
+                $overriding = true;
+            }
+
+            $names[] = self::pgIdent($column['name']);
+            $expressions[] = self::pgIdent($column['name']) . '::text';
+        }
+
+        if (!$names) {
+            return 0;
+        }
+
+        $insert = 'INSERT INTO ' . $object['qualified'] . ' (' . implode(', ', $names) . ')' .
+            ($overriding ? ' OVERRIDING SYSTEM VALUE' : '') . ' VALUES';
+
+        $cursor = 'bkp_' . bin2hex(random_bytes(6));
+        $total = 0;
+        $values = [];
+        $size = 0;
+
+        self::write($writer, "\n--\n-- Dados de " . $object['qualified'] . "\n--\n\n");
+        self::pgSession($db, 'DECLARE ' . $cursor . ' NO SCROLL CURSOR FOR SELECT ' . implode(', ', $expressions) . ' FROM ONLY ' . $object['qualified']);
+
+        try {
+            while (true) {
+                $rows = self::pgRows($db, 'FETCH FORWARD ' . (int) self::$chunkSize . ' FROM ' . $cursor, false);
+
+                foreach ($rows as $row) {
+                    $encoded = [];
+
+                    foreach ($row as $value) {
+                        $encoded[] = $value === null ? 'NULL' : self::pgLiteral((string) $value);
+                    }
+
+                    $tuple = '(' . implode(',', $encoded) . ')';
+                    $values[] = $tuple;
+                    $size += strlen($tuple);
+
+                    if (count($values) >= self::$rowsPerInsert || $size >= self::$maxInsertBytes) {
+                        self::write($writer, $insert . "\n" . implode(",\n", $values) . "\nON CONFLICT DO NOTHING;\n");
+                        $values = [];
+                        $size = 0;
+                    }
+                }
+
+                $total += count($rows);
+
+                if (count($rows) < self::$chunkSize) {
+                    break;
+                }
+            }
+        } finally {
+            self::pgSession($db, 'CLOSE ' . $cursor);
+        }
+
+        if ($values) {
+            self::write($writer, $insert . "\n" . implode(",\n", $values) . "\nON CONFLICT DO NOTHING;\n");
+        }
+
+        return $total;
+    }
+
+    /*
+     * Envolve o comando num bloco que ignora "já existe": o objeto do
+     * destino é mantido como está, e qualquer outro erro continua erro.
+     */
+    private static function pgGuarded($sql, $tag)
+    {
+        if (strpos($sql, $tag) !== false) {
+            throw new RuntimeException('Conflito de delimitador ao gerar o backup.');
+        }
+
+        return 'DO ' . $tag . "\nBEGIN\n" . rtrim(trim($sql), ';') . ";\n" .
+            "EXCEPTION WHEN duplicate_object OR duplicate_table OR duplicate_function THEN NULL;\nEND\n" . $tag . ';';
+    }
+
+    /*
+     * Última barreira do PostgreSQL: só sai para o arquivo comando que cria
+     * algo sem substituir nem remover o que já existe.
+     */
+    private static function pgStatement(array &$writer, $sql, $tag)
+    {
+        $sql = trim($sql);
+        $allowed = '/^(CREATE SCHEMA IF NOT EXISTS |CREATE EXTENSION IF NOT EXISTS |CREATE SEQUENCE IF NOT EXISTS |' .
+            'CREATE (UNLOGGED )?TABLE IF NOT EXISTS |CREATE (UNIQUE )?INDEX IF NOT EXISTS |CREATE MATERIALIZED VIEW IF NOT EXISTS |' .
+            'DO ' . preg_quote($tag, '/') . '\nBEGIN\n(CREATE (TYPE|DOMAIN|VIEW|FUNCTION|PROCEDURE|TRIGGER|CONSTRAINT TRIGGER) |ALTER TABLE \S.* ADD CONSTRAINT ))/';
+
+        if (!preg_match($allowed, $sql)) {
+            throw new LogicException('Comando inesperado no backup: ' . substr($sql, 0, 60));
+        }
+
+        self::write($writer, $sql . "\n");
+    }
+
+    private static function pgIdent($name)
+    {
+        return '"' . str_replace('"', '""', (string) $name) . '"';
+    }
+
+    private static function pgLiteral($value)
+    {
+        return "'" . str_replace("'", "''", (string) $value) . "'";
+    }
+
+    private static function pgOids(array $oids)
+    {
+        return implode(', ', array_map('intval', $oids));
+    }
+
+    private static function pgBool($value)
+    {
+        return $value === true || $value === 't' || $value === 1 || $value === '1' || $value === 'true' || $value === 'on';
+    }
+
+    // ------------------------------------------------------------------
+    // PostgreSQL: acesso ao banco, somente leitura e pela conexão nativa
+    // ------------------------------------------------------------------
+
+    private static function pgRows($db, $sql, $assoc = true)
+    {
+        if (!preg_match('/^\s*(SELECT|FETCH FORWARD \d+ FROM bkp_[0-9a-f]+$)/i', $sql)) {
+            throw new LogicException('BackupDatabaseHelper só executa SELECT no PostgreSQL.');
+        }
+
+        return self::pgRun($db, $sql, $assoc ? 'assoc' : 'num');
+    }
+
+    private static function pgRow($db, $sql)
+    {
+        $rows = self::pgRows($db, $sql);
+
+        return $rows ? $rows[0] : null;
+    }
+
+    private static function pgValue($db, $sql)
+    {
+        $rows = self::pgRows($db, $sql, false);
+
+        return $rows ? $rows[0][0] : null;
+    }
+
+    /*
+     * Comandos permitidos além de SELECT: abrir e desfazer a transação de
+     * leitura, configurar a própria transação (SET LOCAL) e o cursor.
+     */
+    private static function pgSession($db, $sql)
+    {
+        $allowed = '/^(BEGIN TRANSACTION ISOLATION LEVEL (REPEATABLE READ|READ COMMITTED), READ ONLY|ROLLBACK|' .
+            'SET LOCAL \w+ = \'[\w ,]+\'|' .
+            'DECLARE bkp_[0-9a-f]+ NO SCROLL CURSOR FOR SELECT .+|CLOSE bkp_[0-9a-f]+)$/s';
+
+        if (!preg_match($allowed, $sql)) {
+            throw new LogicException('Comando de sessão não permitido no backup.');
+        }
+
+        self::pgRun($db, $sql, 'none');
+    }
+
+    private static function pgRun($db, $sql, $fetch)
+    {
+        $connection = self::pgNative($db);
+
+        if ($connection instanceof PDO) {
+            $statement = $connection->query($sql);
+
+            if ($statement === false) {
+                $info = $connection->errorInfo();
+
+                throw new RuntimeException(isset($info[2]) ? (string) $info[2] : 'Erro no PostgreSQL.');
+            }
+
+            if ($fetch === 'none') {
+                $statement->closeCursor();
+
+                return [];
+            }
+
+            return $statement->fetchAll($fetch === 'assoc' ? PDO::FETCH_ASSOC : PDO::FETCH_NUM);
+        }
+
+        $result = @pg_query($connection, $sql);
+
+        if ($result === false) {
+            throw new RuntimeException(pg_last_error($connection));
+        }
+
+        if ($fetch === 'none') {
+            return [];
+        }
+
+        $rows = pg_fetch_all($result, $fetch === 'assoc' ? PGSQL_ASSOC : PGSQL_NUM);
+
+        return $rows ?: [];
+    }
+
+    /*
+     * PDO no Joomla 4+ (driver pgsql) ou a conexão pg_* do Joomla 3.
+     */
+    private static function pgNative($db)
+    {
+        if (method_exists($db, 'connect')) {
+            $db->connect();
+        }
+
+        $connection = method_exists($db, 'getConnection') ? $db->getConnection() : null;
+
+        if ($connection instanceof PDO
+            || (class_exists('PgSql\\Connection', false) && $connection instanceof PgSql\Connection)
+            || is_resource($connection)) {
+            return $connection;
+        }
+
+        throw new RuntimeException('Não foi possível acessar a conexão nativa do PostgreSQL.');
+    }
+
+    // ------------------------------------------------------------------
     // Acesso ao banco: somente leitura
     // ------------------------------------------------------------------
 
@@ -845,7 +2014,7 @@ class BackupDatabaseHelper
 
     private static function session($db, $sql)
     {
-        $allowed = '/^(SET SESSION time_zone = \'[\w\/:+-]+\'|SET NAMES \'\w+\'( COLLATE \'\w+\')?|SET TRANSACTION ISOLATION LEVEL REPEATABLE READ|START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY|COMMIT)$/';
+        $allowed = '/^(SET SESSION time_zone = \'[\w\/:+-]+\'|SET NAMES \'\w+\'( COLLATE \'\w+\')?|SET TRANSACTION ISOLATION LEVEL REPEATABLE READ|START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY|ROLLBACK)$/';
 
         if (!preg_match($allowed, $sql)) {
             throw new LogicException('Comando de sessão não permitido no backup.');
