@@ -33,6 +33,7 @@ class ComposerStaticInit964c0b4692e364c3b33365854c266d10
         'ApiResponseHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ApiResponseHelper.php',
         'ArrayHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ArrayHelper.php',
         'AuditHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/AuditHelper.php',
+        'BackupDatabaseHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/BackupDatabaseHelper.php',
         'CacheHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/CacheHelper.php',
         'ChunkHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ChunkUploadHelper.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',

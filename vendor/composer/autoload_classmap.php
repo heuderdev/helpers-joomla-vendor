@@ -9,6 +9,7 @@ return array(
     'ApiResponseHelper' => $vendorDir . '/heuderdev/helpers/src/ApiResponseHelper.php',
     'ArrayHelper' => $vendorDir . '/heuderdev/helpers/src/ArrayHelper.php',
     'AuditHelper' => $vendorDir . '/heuderdev/helpers/src/AuditHelper.php',
+    'BackupDatabaseHelper' => $vendorDir . '/heuderdev/helpers/src/BackupDatabaseHelper.php',
     'CacheHelper' => $vendorDir . '/heuderdev/helpers/src/CacheHelper.php',
     'ChunkHelper' => $vendorDir . '/heuderdev/helpers/src/ChunkUploadHelper.php',
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
