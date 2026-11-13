@@ -43,6 +43,7 @@ class ComposerStaticInit964c0b4692e364c3b33365854c266d10
         'DateHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/DateHelper.php',
         'DbConnectionHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/DbConnectionHelper.php',
         'DbTransactionHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/DbTransactionHelper.php',
+        'EmailSendHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/EmailSendHelper.php',
         'ExportHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ExportHelper.php',
         'FileHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/FileHelper.php',
         'FormatHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/FormatHelper.php',

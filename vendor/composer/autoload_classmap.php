@@ -19,6 +19,7 @@ return array(
     'DateHelper' => $vendorDir . '/heuderdev/helpers/src/DateHelper.php',
     'DbConnectionHelper' => $vendorDir . '/heuderdev/helpers/src/DbConnectionHelper.php',
     'DbTransactionHelper' => $vendorDir . '/heuderdev/helpers/src/DbTransactionHelper.php',
+    'EmailSendHelper' => $vendorDir . '/heuderdev/helpers/src/EmailSendHelper.php',
     'ExportHelper' => $vendorDir . '/heuderdev/helpers/src/ExportHelper.php',
     'FileHelper' => $vendorDir . '/heuderdev/helpers/src/FileHelper.php',
     'FormatHelper' => $vendorDir . '/heuderdev/helpers/src/FormatHelper.php',
