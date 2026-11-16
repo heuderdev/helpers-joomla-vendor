@@ -3,7 +3,7 @@
         'name' => 'heuderdev/aplicacao',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '33a456999c6f0e8e1794a3abbefb9466bf025f36',
+        'reference' => '788a10039a568810f3b767b783563977a91c8d7b',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -13,7 +13,7 @@
         'heuderdev/aplicacao' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '33a456999c6f0e8e1794a3abbefb9466bf025f36',
+            'reference' => '788a10039a568810f3b767b783563977a91c8d7b',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

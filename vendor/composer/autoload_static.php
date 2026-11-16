@@ -65,6 +65,7 @@ class ComposerStaticInit964c0b4692e364c3b33365854c266d10
         'SettingsHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/SettingsHelper.php',
         'UploadMaster' => __DIR__ . '/..' . '/heuderdev/helpers/src/UploadMaster.php',
         'UploadMasterException' => __DIR__ . '/..' . '/heuderdev/helpers/src/UploadMaster.php',
+        'UserHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/UserHelper.php',
         'ValidationHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/ValidationHelper.php',
         'WebhookHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/WebhookHelper.php',
     );

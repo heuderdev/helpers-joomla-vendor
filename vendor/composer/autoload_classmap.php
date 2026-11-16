@@ -41,6 +41,7 @@ return array(
     'SettingsHelper' => $vendorDir . '/heuderdev/helpers/src/SettingsHelper.php',
     'UploadMaster' => $vendorDir . '/heuderdev/helpers/src/UploadMaster.php',
     'UploadMasterException' => $vendorDir . '/heuderdev/helpers/src/UploadMaster.php',
+    'UserHelper' => $vendorDir . '/heuderdev/helpers/src/UserHelper.php',
     'ValidationHelper' => $vendorDir . '/heuderdev/helpers/src/ValidationHelper.php',
     'WebhookHelper' => $vendorDir . '/heuderdev/helpers/src/WebhookHelper.php',
 );
