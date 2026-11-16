@@ -2,3 +2,4 @@ exports
 logs
 config.php
 *.csv
+exemplo/*
