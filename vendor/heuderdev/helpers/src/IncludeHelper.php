@@ -49,7 +49,8 @@ class IncludeHelper
         'FormatHelper'        => array(),
         'WebhookHelper'       => array('LogHelper', 'ApiResponseHelper', 'CryptoHelper', 'DbConnectionHelper'),
         'SettingsHelper'      => array(),
-        'UserHelper'          => array('OrmTables', 'LogHelper', 'PermissionHelper')
+        'UserHelper'          => array('OrmTables', 'LogHelper', 'PermissionHelper'),
+        'SheetToTableHelper'  => array('OrmTables', 'DbConnectionHelper', 'DbTransactionHelper', 'LogHelper')
     );
 
     /**
@@ -73,7 +74,9 @@ class IncludeHelper
         'UploadMasterException' => 'UploadMaster',
         'HttpClient'            => 'HttpHelper',
         'HttpHelperException'   => 'HttpHelper',
-        'LockHelperException'   => 'LockHelper'
+        'LockHelperException'   => 'LockHelper',
+        'SheetToTableException' => 'SheetToTableHelper',
+        'SheetToTableRollback'  => 'SheetToTableHelper'
     );
 
     /**

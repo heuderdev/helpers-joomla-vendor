@@ -11,14 +11,53 @@ class ComposerStaticInit964c0b4692e364c3b33365854c266d10
     );
 
     public static $prefixLengthsPsr4 = array (
+        'Z' => 
+        array (
+            'ZipStream\\' => 10,
+        ),
+        'P' => 
+        array (
+            'Psr\\SimpleCache\\' => 16,
+            'PhpOffice\\WMF\\' => 14,
+            'PhpOffice\\PhpSpreadsheet\\' => 25,
+        ),
+        'M' => 
+        array (
+            'Matrix\\' => 7,
+        ),
         'J' => 
         array (
             'Joomla\\Event\\' => 13,
             'Joomla\\Database\\' => 16,
         ),
+        'C' => 
+        array (
+            'Composer\\Pcre\\' => 14,
+            'Complex\\' => 8,
+        ),
     );
 
     public static $prefixDirsPsr4 = array (
+        'ZipStream\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/maennchen/zipstream-php/src',
+        ),
+        'Psr\\SimpleCache\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/psr/simple-cache/src',
+        ),
+        'PhpOffice\\WMF\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/phpoffice/wmf/src/WMF',
+        ),
+        'PhpOffice\\PhpSpreadsheet\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/phpoffice/phpspreadsheet/src/PhpSpreadsheet',
+        ),
+        'Matrix\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/markbaker/matrix/classes/src',
+        ),
         'Joomla\\Event\\' => 
         array (
             0 => __DIR__ . '/..' . '/joomla/event/src',
@@ -26,6 +65,14 @@ class ComposerStaticInit964c0b4692e364c3b33365854c266d10
         'Joomla\\Database\\' => 
         array (
             0 => __DIR__ . '/..' . '/joomla/database/src',
+        ),
+        'Composer\\Pcre\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/composer/pcre/src',
+        ),
+        'Complex\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/markbaker/complex/classes/src',
         ),
     );
 
@@ -63,6 +110,9 @@ class ComposerStaticInit964c0b4692e364c3b33365854c266d10
         'QueueHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/QueueHelper.php',
         'RateLimitHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/RateLimitHelper.php',
         'SettingsHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/SettingsHelper.php',
+        'SheetToTableException' => __DIR__ . '/..' . '/heuderdev/helpers/src/SheetToTableHelper.php',
+        'SheetToTableHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/SheetToTableHelper.php',
+        'SheetToTableRollback' => __DIR__ . '/..' . '/heuderdev/helpers/src/SheetToTableHelper.php',
         'UploadMaster' => __DIR__ . '/..' . '/heuderdev/helpers/src/UploadMaster.php',
         'UploadMasterException' => __DIR__ . '/..' . '/heuderdev/helpers/src/UploadMaster.php',
         'UserHelper' => __DIR__ . '/..' . '/heuderdev/helpers/src/UserHelper.php',
