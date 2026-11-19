@@ -49,8 +49,10 @@ class IncludeHelper
         'FormatHelper'        => array(),
         'WebhookHelper'       => array('LogHelper', 'ApiResponseHelper', 'CryptoHelper', 'DbConnectionHelper'),
         'SettingsHelper'      => array(),
-        'UserHelper'          => array('OrmTables', 'LogHelper', 'PermissionHelper'),
-        'SheetToTableHelper'  => array('OrmTables', 'DbConnectionHelper', 'DbTransactionHelper', 'ValidationHelper', 'LogHelper')
+        'UserHelper'          => array('OrmTables', 'LogHelper'),
+        'SheetToTableHelper'  => array('OrmTables', 'DbConnectionHelper', 'DbTransactionHelper', 'ValidationHelper', 'LogHelper'),
+        'ArrayHelper'         => array(),
+        'BackupDatabaseHelper' => array('PlatformHelper', 'DbConnectionHelper')
     );
 
     /**

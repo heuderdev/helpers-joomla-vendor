@@ -86,13 +86,13 @@
             "dist": {
                 "type": "path",
                 "url": "packages/heuderdev/helpers",
-                "reference": "d5e1a97f1a5781cfe391cf929e9af97afd9e3900"
+                "reference": "ffd9af2ba55b9d65c6157783f8fbef4c92c902df"
             },
             "require": {
                 "ext-json": "*",
                 "ext-mysqli": "*",
-                "joomla/database": "^4.0",
-                "php": ">=8.3.0",
+                "joomla/database": "^2.0 || ^3.0 || ^4.0",
+                "php": ">=7.4.0",
                 "phpoffice/phpspreadsheet": "^1.29 || ^2.0 || ^3.0 || ^4.0 || ^5.0"
             },
             "type": "library",

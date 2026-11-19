@@ -137,8 +137,9 @@ class UserHelper
      *       return OrmTables::table('#__dados_pessoais')->findBy('user_id', $userId);
      *   });
      */
-    public static function setDadosPessoaisResolver(?callable $resolver = null)
+    public static function setDadosPessoaisResolver($resolver = null)
     {
+        self::assertOptionalCallable($resolver, __METHOD__, 1, 'resolver');
         self::$dadosPessoaisResolver = $resolver;
         self::$memo = [];
     }
@@ -907,8 +908,10 @@ class UserHelper
      * Executa $then se o usuário estiver no grupo; senão $else (opcional).
      * Devolve o retorno do callback executado (ou null).
      */
-    public static function whenInGroup($group, callable $then, ?callable $else = null, $user = null)
+    public static function whenInGroup($group, callable $then, $else = null, $user = null)
     {
+        self::assertOptionalCallable($else, __METHOD__, 3, 'else');
+
         if (self::inGroup($group, $user)) {
             return $then(self::current($user));
         }
@@ -1841,6 +1844,14 @@ class UserHelper
      * Alguns helpers encerram o script fora do Joomla (defined('_JEXEC')
      * or die). Só deixa o autoload carregá-los dentro do Joomla.
      */
+    // Substitui ?callable (PHP 7.1+) mantendo o TypeError para valor inválido.
+    private static function assertOptionalCallable($value, $method, $position, $param)
+    {
+        if ($value !== null && !is_callable($value)) {
+            throw new TypeError($method . '(): Argument #' . $position . ' ($' . $param . ') must be of type ?callable, ' . (is_object($value) ? get_class($value) : gettype($value)) . ' given');
+        }
+    }
+
     private static function hasHelper($class)
     {
         if (class_exists($class, false)) {

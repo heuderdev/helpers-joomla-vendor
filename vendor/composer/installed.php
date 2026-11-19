@@ -3,7 +3,7 @@
         'name' => 'heuderdev/aplicacao',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '7d111c3beb4725dac70d314b6262c5ddd667b11c',
+        'reference' => '114d5e3d4c79deb9d65109772fd90577d2ec921c',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -22,7 +22,7 @@
         'heuderdev/aplicacao' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '7d111c3beb4725dac70d314b6262c5ddd667b11c',
+            'reference' => '114d5e3d4c79deb9d65109772fd90577d2ec921c',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -31,7 +31,7 @@
         'heuderdev/helpers' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => 'd5e1a97f1a5781cfe391cf929e9af97afd9e3900',
+            'reference' => 'ffd9af2ba55b9d65c6157783f8fbef4c92c902df',
             'type' => 'library',
             'install_path' => __DIR__ . '/../heuderdev/helpers',
             'aliases' => array(),

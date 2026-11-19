@@ -77,7 +77,7 @@ class EmailSendHelper
     // Provedores prontos (o que for informado no register() vence)
     // ------------------------------------------------------------------
 
-    private const PROVIDERS = [
+    const PROVIDERS = [
         'elasticemail' => ['driver' => 'elasticemail'],
         'elastic' => ['driver' => 'elasticemail'],
         'elasticemail_smtp' => ['driver' => 'smtp', 'host' => 'smtp.elasticemail.com', 'port' => 2525, 'encryption' => 'tls'],
@@ -102,14 +102,14 @@ class EmailSendHelper
         'log' => ['driver' => 'log'],
     ];
 
-    private const DRIVERS = ['smtp', 'elasticemail', 'mail', 'log'];
+    const DRIVERS = ['smtp', 'elasticemail', 'mail', 'log'];
 
-    private const ELASTIC_URL = 'https://api.elasticemail.com/v4/emails/transactional';
+    const ELASTIC_URL = 'https://api.elasticemail.com/v4/emails/transactional';
 
     // Limite padrão da soma dos anexos (o Gmail recusa acima de 25 MB).
-    private const DEFAULT_MAX_SIZE = 25 * 1024 * 1024;
+    const DEFAULT_MAX_SIZE = 25 * 1024 * 1024;
 
-    private const MIME_TYPES = [
+    const MIME_TYPES = [
         'pdf' => 'application/pdf', 'csv' => 'text/csv', 'txt' => 'text/plain', 'html' => 'text/html',
         'htm' => 'text/html', 'xml' => 'application/xml', 'json' => 'application/json', 'zip' => 'application/zip',
         'rar' => 'application/vnd.rar', '7z' => 'application/x-7z-compressed', 'gz' => 'application/gzip',
@@ -127,19 +127,19 @@ class EmailSendHelper
     // Estado global
     // ------------------------------------------------------------------
 
-    private static array $connections = [];
+    private static $connections = [];
 
-    private static ?string $default = null;
+    private static $default = null;
 
-    private static ?string $viewDirectory = null;
+    private static $viewDirectory = null;
 
     private static $defaultLayout = null;
 
-    private static bool $fake = false;
+    private static $fake = false;
 
-    private static array $sent = [];
+    private static $sent = [];
 
-    private static array $transcript = [];
+    private static $transcript = [];
 
     // ------------------------------------------------------------------
     // Mensagem (instância)
@@ -147,39 +147,39 @@ class EmailSendHelper
 
     private $connection = null;
 
-    private array $to = [];
+    private $to = [];
 
-    private array $cc = [];
+    private $cc = [];
 
-    private array $bcc = [];
+    private $bcc = [];
 
-    private array $replyTo = [];
+    private $replyTo = [];
 
-    private ?array $from = null;
+    private $from = null;
 
-    private string $subject = '';
+    private $subject = '';
 
-    private ?string $html = null;
+    private $html = null;
 
-    private ?string $text = null;
+    private $text = null;
 
-    private ?string $view = null;
+    private $view = null;
 
     private $layout = null;
 
-    private bool $layoutSet = false;
+    private $layoutSet = false;
 
-    private array $data = [];
+    private $data = [];
 
-    private array $attachments = [];
+    private $attachments = [];
 
-    private array $embeds = [];
+    private $embeds = [];
 
-    private array $headers = [];
+    private $headers = [];
 
-    private ?int $priority = null;
+    private $priority = null;
 
-    private array $pending = [];
+    private $pending = [];
 
     // ------------------------------------------------------------------
     // Conexões
@@ -192,7 +192,7 @@ class EmailSendHelper
      * from_name, reply_to, envelope_from, timeout, verify_peer, helo,
      * directory (driver log), max_size (bytes dos anexos), debug.
      */
-    public static function register(string $name, array $config = []): void
+    public static function register(string $name, array $config = [])
     {
         $key = strtolower(trim($name));
 
@@ -241,14 +241,14 @@ class EmailSendHelper
     /*
      * Registra várias de uma vez: ['elasticemail' => [...], 'gmail' => [...]].
      */
-    public static function registerMany(array $connections): void
+    public static function registerMany(array $connections)
     {
         foreach ($connections as $name => $config) {
             self::register((string) $name, (array) $config);
         }
     }
 
-    public static function setDefault(string $name): void
+    public static function setDefault(string $name)
     {
         $key = strtolower($name);
 
@@ -259,7 +259,7 @@ class EmailSendHelper
         self::$default = $key;
     }
 
-    public static function getDefault(): ?string
+    public static function getDefault()
     {
         return self::$default;
     }
@@ -269,13 +269,14 @@ class EmailSendHelper
         return isset(self::$connections[strtolower($name)]);
     }
 
-    public static function forget(string $name): void
+    public static function forget(string $name)
     {
         $key = strtolower($name);
         unset(self::$connections[$key]);
 
         if (self::$default === $key) {
-            self::$default = array_key_first(self::$connections);
+            $first = self::firstKey(self::$connections);
+            self::$default = $first === null ? null : (string) $first;
         }
     }
 
@@ -304,15 +305,16 @@ class EmailSendHelper
     /*
      * Pasta base das views/layouts (caminhos relativos procuram aqui).
      */
-    public static function setViewDirectory(?string $directory): void
+    public static function setViewDirectory($directory)
     {
+        $directory = self::optionalString($directory, __METHOD__, 1, 'directory');
         self::$viewDirectory = $directory === null ? null : rtrim($directory, '/\\');
     }
 
     /*
      * Layout aplicado a todo e-mail HTML (->layout(false) desliga em um envio).
      */
-    public static function setDefaultLayout($file): void
+    public static function setDefaultLayout($file)
     {
         self::$defaultLayout = $file ?: null;
     }
@@ -320,7 +322,7 @@ class EmailSendHelper
     /*
      * Modo de teste: nada sai; as mensagens montadas ficam em sent().
      */
-    public static function fake(bool $fake = true): void
+    public static function fake(bool $fake = true)
     {
         self::$fake = $fake;
         self::$sent = [];
@@ -335,8 +337,9 @@ class EmailSendHelper
      * Testa conexão e login SMTP sem enviar nada (útil para conferir a
      * senha de app do Gmail/Outlook). Outros drivers só validam a config.
      */
-    public static function testConnection(?string $name = null): array
+    public static function testConnection($name = null): array
     {
+        $name = self::optionalString($name, __METHOD__, 1, 'name');
         try {
             $config = self::config($name ?? self::$default);
 
@@ -456,28 +459,33 @@ class EmailSendHelper
      * Endereços: 'a@x.com', 'a@x.com, b@x.com', 'Ana <a@x.com>',
      * ['a@x.com', 'b@x.com'] ou ['a@x.com' => 'Ana'].
      */
-    public function to($address, ?string $name = null): self
+    public function to($address, $name = null): self
     {
+        $name = self::optionalString($name, __METHOD__, 2, 'name');
         return $this->addAddress('to', $address, $name);
     }
 
-    public function cc($address, ?string $name = null): self
+    public function cc($address, $name = null): self
     {
+        $name = self::optionalString($name, __METHOD__, 2, 'name');
         return $this->addAddress('cc', $address, $name);
     }
 
-    public function bcc($address, ?string $name = null): self
+    public function bcc($address, $name = null): self
     {
+        $name = self::optionalString($name, __METHOD__, 2, 'name');
         return $this->addAddress('bcc', $address, $name);
     }
 
-    public function replyTo($address, ?string $name = null): self
+    public function replyTo($address, $name = null): self
     {
+        $name = self::optionalString($name, __METHOD__, 2, 'name');
         return $this->addAddress('replyTo', $address, $name);
     }
 
-    public function from(string $email, ?string $name = null): self
+    public function from(string $email, $name = null): self
     {
+        $name = self::optionalString($name, __METHOD__, 2, 'name');
         $this->from = [$email, (string) $name];
 
         return $this;
@@ -536,8 +544,10 @@ class EmailSendHelper
         return $this;
     }
 
-    public function attach(string $path, ?string $name = null, ?string $mime = null): self
+    public function attach(string $path, $name = null, $mime = null): self
     {
+        $name = self::optionalString($name, __METHOD__, 2, 'name');
+        $mime = self::optionalString($mime, __METHOD__, 3, 'mime');
         $this->attachments[] = ['path' => $path, 'name' => $name, 'mime' => $mime];
 
         return $this;
@@ -546,8 +556,9 @@ class EmailSendHelper
     /*
      * Anexo gerado em memória (PDF, CSV, XML...), sem arquivo em disco.
      */
-    public function attachData(string $content, string $name, ?string $mime = null): self
+    public function attachData(string $content, string $name, $mime = null): self
     {
+        $mime = self::optionalString($mime, __METHOD__, 3, 'mime');
         $this->attachments[] = ['content' => $content, 'name' => $name, 'mime' => $mime];
 
         return $this;
@@ -590,8 +601,9 @@ class EmailSendHelper
      * Imagem embutida: no HTML use <img src="cid:SEU_CID">.
      * Sem $cid, usa o nome do arquivo sem extensão (logo.png => cid:logo).
      */
-    public function embed(string $path, ?string $cid = null): self
+    public function embed(string $path, $cid = null): self
     {
+        $cid = self::optionalString($cid, __METHOD__, 2, 'cid');
         $cid = $cid ?? pathinfo($path, PATHINFO_FILENAME);
         $cid = preg_replace('/[^A-Za-z0-9._-]/', '', $cid);
         $this->embeds[] = ['path' => $path, 'cid' => $cid];
@@ -734,7 +746,7 @@ class EmailSendHelper
     public function toMime(): string
     {
         $message = $this->build($this->previewConfig());
-        [$headers, $body] = self::mime($message, false);
+        list($headers, $body) = self::mime($message, false);
 
         return self::headerLines($headers) . "\r\n" . $body;
     }
@@ -805,7 +817,7 @@ class EmailSendHelper
             $replyTo = self::addresses($config['reply_to'], null, 'reply_to');
         }
 
-        [$attachments, $embeds] = $this->loadFiles((int) ($config['max_size'] ?? self::DEFAULT_MAX_SIZE));
+        list($attachments, $embeds) = $this->loadFiles((int) ($config['max_size'] ?? self::DEFAULT_MAX_SIZE));
 
         $headers = [];
 
@@ -890,7 +902,9 @@ class EmailSendHelper
 
         $render = static function (string $__path, array $__data): string {
             extract($__data, EXTR_SKIP);
-            $e = static fn ($value) => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+            $e = static function ($value) {
+                return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+            };
             $level = ob_get_level();
             ob_start();
 
@@ -1057,7 +1071,7 @@ class EmailSendHelper
 
             self::smtpCommand($socket, 'DATA', [354]);
 
-            [$headers, $body] = self::mime($message, false);
+            list($headers, $body) = self::mime($message, false);
             $raw = self::headerLines($headers) . "\r\n" . $body;
             // Dot-stuffing: linha que começa com "." ganha outro ponto.
             $raw = preg_replace('/^\./m', '..', $raw);
@@ -1108,7 +1122,7 @@ class EmailSendHelper
         ];
 
         if ($message['reply_to']) {
-            $email = array_key_first($message['reply_to']);
+            $email = self::firstKey($message['reply_to']);
             $content['ReplyTo'] = self::formatAddressPlain($email, $message['reply_to'][$email]);
         }
 
@@ -1134,9 +1148,13 @@ class EmailSendHelper
             $recipients['BCC'] = array_keys($message['bcc']);
         }
 
-        $payload = json_encode(['Recipients' => $recipients, 'Content' => $content], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $payload = json_encode(['Recipients' => $recipients, 'Content' => $content], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        [$status, $response] = self::httpPost(
+        if ($payload === false) {
+            throw new RuntimeException(json_last_error_msg());
+        }
+
+        list($status, $response) = self::httpPost(
             (string) ($config['api_url'] ?? self::ELASTIC_URL),
             $payload,
             ['Content-Type: application/json', 'Accept: application/json', 'X-ElasticEmail-ApiKey: ' . $config['api_key']],
@@ -1165,7 +1183,7 @@ class EmailSendHelper
 
     private static function sendPhpMail(array $config, array $message): array
     {
-        [$headers, $body] = self::mime($message, true);
+        list($headers, $body) = self::mime($message, true);
 
         $to = $headers['To'] ?? '';
         $subject = $headers['Subject'] ?? '';
@@ -1207,7 +1225,7 @@ class EmailSendHelper
             throw new RuntimeException('Não foi possível criar a pasta de e-mails: ' . $directory);
         }
 
-        [$headers, $body] = self::mime($message, true);
+        list($headers, $body) = self::mime($message, true);
         $file = $directory . '/' . date('Y-m-d_His') . '_' . substr(bin2hex(random_bytes(4)), 0, 8) . '.eml';
 
         if (file_put_contents($file, self::headerLines($headers) . "\r\n" . $body) === false) {
@@ -1340,7 +1358,7 @@ class EmailSendHelper
 
     private static function smtpEhlo($socket, string $helo): array
     {
-        [$code, $response] = self::smtpSend($socket, 'EHLO ' . $helo);
+        list($code, $response) = self::smtpSend($socket, 'EHLO ' . $helo);
 
         if ($code !== 250) {
             self::smtpCommand($socket, 'HELO ' . $helo, [250]);
@@ -1363,7 +1381,7 @@ class EmailSendHelper
         return $capabilities;
     }
 
-    private static function smtpAuth($socket, array $config, array $capabilities): void
+    private static function smtpAuth($socket, array $config, array $capabilities)
     {
         $user = (string) ($config['username'] ?? '');
         $password = (string) ($config['password'] ?? '');
@@ -1422,7 +1440,7 @@ class EmailSendHelper
 
     private static function smtpCommand($socket, string $command, array $expected, bool $secret = false): string
     {
-        [$code, $response] = self::smtpSend($socket, $command, $secret);
+        list($code, $response) = self::smtpSend($socket, $command, $secret);
 
         if (!in_array($code, $expected, true)) {
             $label = $secret ? 'AUTH' : strtok($command, ' :');
@@ -1442,7 +1460,7 @@ class EmailSendHelper
 
     private static function smtpExpect($socket, array $expected): string
     {
-        [$code, $response] = self::smtpRead($socket);
+        list($code, $response) = self::smtpRead($socket);
 
         if (!in_array($code, $expected, true)) {
             throw new RuntimeException('Resposta inesperada do servidor: ' . trim($response));
@@ -1451,7 +1469,7 @@ class EmailSendHelper
         return $response;
     }
 
-    private static function smtpWrite($socket, string $data, bool $record = true, bool $secret = false): void
+    private static function smtpWrite($socket, string $data, bool $record = true, bool $secret = false)
     {
         if ($record) {
             self::$transcript[] = 'C: ' . ($secret ? '[credenciais ocultas]' : rtrim($data));
@@ -1497,7 +1515,7 @@ class EmailSendHelper
         return [(int) substr($response, 0, 3), $response];
     }
 
-    private static function smtpQuit($socket): void
+    private static function smtpQuit($socket)
     {
         try {
             self::smtpSend($socket, 'QUIT');
@@ -1602,8 +1620,9 @@ class EmailSendHelper
         ];
     }
 
-    private static function multipart(string $subtype, array $parts, ?string $type = null): array
+    private static function multipart(string $subtype, array $parts, $type = null): array
     {
+        $type = self::optionalString($type, __METHOD__, 3, 'type');
         $boundary = '=_' . bin2hex(random_bytes(12));
         $body = "This is a multi-part message in MIME format.\r\n";
 
@@ -1617,8 +1636,9 @@ class EmailSendHelper
         return ['headers' => ['Content-Type' => $contentType], 'body' => $body];
     }
 
-    private static function filePart(array $file, string $disposition, ?string $cid = null): array
+    private static function filePart(array $file, string $disposition, $cid = null): array
     {
+        $cid = self::optionalString($cid, __METHOD__, 3, 'cid');
         $extra = ['Content-Disposition' => $disposition . '; ' . self::fileParam('filename', $file['name'])];
 
         if ($cid !== null) {
@@ -1703,8 +1723,9 @@ class EmailSendHelper
     // Internos
     // ------------------------------------------------------------------
 
-    private function addAddress(string $field, $address, ?string $name): self
+    private function addAddress(string $field, $address, $name): self
     {
+        $name = self::optionalString($name, __METHOD__, 3, 'name');
         try {
             $this->$field = array_merge($this->$field, self::addresses($address, $name, $field));
         } catch (InvalidArgumentException $error) {
@@ -1715,8 +1736,9 @@ class EmailSendHelper
         return $this;
     }
 
-    private static function addresses($value, ?string $name, string $field): array
+    private static function addresses($value, $name, string $field): array
     {
+        $name = self::optionalString($name, __METHOD__, 2, 'name');
         if ($value === null || $value === '' || $value === []) {
             return [];
         }
@@ -1868,8 +1890,9 @@ class EmailSendHelper
         }
     }
 
-    private static function config(?string $name): array
+    private static function config($name): array
     {
+        $name = self::optionalString($name, __METHOD__, 1, 'name');
         if ($name === null) {
             throw new RuntimeException('Nenhuma conexão de e-mail registrada (use EmailSendHelper::register()).');
         }
@@ -1911,7 +1934,7 @@ class EmailSendHelper
         return trim(preg_replace('/[\r\n\0]+/', ' ', $text));
     }
 
-    private static function log(string $level, string $text, array $config, array $message): void
+    private static function log(string $level, string $text, array $config, array $message)
     {
         if (!class_exists('LogHelper', false) || !method_exists('LogHelper', $level)) {
             return;
@@ -1935,5 +1958,31 @@ class EmailSendHelper
             'data' => $data,
             'errors' => $errors,
         ];
+    }
+
+    // ------------------------------------------------------------------
+    // Compatibilidade PHP 7.0 (substituem ?string e array_key_first)
+    // ------------------------------------------------------------------
+
+    private static function optionalString($value, $method, $position, $param)
+    {
+        if ($value === null || is_string($value)) {
+            return $value;
+        }
+
+        if (is_scalar($value) || (is_object($value) && method_exists($value, '__toString'))) {
+            return (string) $value;
+        }
+
+        throw new TypeError($method . '(): Argument #' . $position . ' ($' . $param . ') must be of type ?string, ' . (is_object($value) ? get_class($value) : gettype($value)) . ' given');
+    }
+
+    private static function firstKey(array $array)
+    {
+        foreach ($array as $key => $unused) {
+            return $key;
+        }
+
+        return null;
     }
 }
