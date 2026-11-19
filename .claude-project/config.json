@@ -1,0 +1,74 @@
+{
+  "exclude_dirs": [
+    ".git",
+    ".claude",
+    ".claude-project",
+    "vendor",
+    "node_modules",
+    "tools/claude_project",
+    "exports",
+    "logs",
+    "backups",
+    "cache",
+    "tmp",
+    "storage",
+    "exemplo"
+  ],
+  "exclude_globs": [
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+    "config.php",
+    ".env",
+    ".env.*",
+    "*.csv",
+    "*.xlsx",
+    "*.xls",
+    "*.ods",
+    "*.sql",
+    "*.sql.gz",
+    "*.dump",
+    "*.zip",
+    "*.gz",
+    "*.log",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "*.crt",
+    "id_rsa*",
+    "*.bak",
+    "*.backup",
+    "*.tmp",
+    "*.swp",
+    "*.pyc"
+  ],
+  "human_files": [
+    "arquiteto.md",
+    "subregra.md",
+    "CLAUDE.local.md"
+  ],
+  "limits": {
+    "artifact_max_bytes": 65536,
+    "context_file_bytes": 60000,
+    "context_total_bytes": 400000,
+    "max_file_bytes": 2097152
+  },
+  "registry_dirs": [
+    "packages/heuderdev/helpers/src"
+  ],
+  "registry_file": "packages/heuderdev/helpers/src/IncludeHelper.php",
+  "schema_version": 1,
+  "transversal": [
+    "composer.json",
+    "composer.lock",
+    ".gitignore",
+    "packages/heuderdev/helpers/composer.json",
+    "packages/heuderdev/helpers/src/IncludeHelper.php",
+    "packages/heuderdev/helpers/src/PlatformHelper.php",
+    "packages/heuderdev/helpers/src/DbConnectionHelper.php",
+    "packages/heuderdev/helpers/src/DbTransactionHelper.php",
+    "packages/heuderdev/helpers/src/OrmBase.php",
+    "packages/heuderdev/helpers/src/OrmTables.php"
+  ],
+  "use_gitignore": true
+}

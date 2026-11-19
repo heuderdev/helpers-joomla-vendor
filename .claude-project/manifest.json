@@ -1,0 +1,144 @@
+{
+  "artefatos": {
+    ".claude/agents/revisor-compat.md": {
+      "evidencias": [
+        "requisito de compatibilidade multi-plataforma declarado em todos os helpers",
+        "usuario: aprovou a inclusão do agent"
+      ],
+      "fontes": [
+        "packages/heuderdev/helpers/src/*.php"
+      ],
+      "proposta": "48e18dde21cb",
+      "sha256": "9007c58f83cdaa4d6a8edc5e26858a68c53018dd4c1ea9810514197c8dec9cc3"
+    },
+    ".claude/rules/helpers-php.md": {
+      "evidencias": [
+        "DbTransactionHelper.php#begin/commit/rollback",
+        "SheetToTableHelper.php#writeBatch (ON DUPLICATE KEY / ON CONFLICT, boolean '1'/'0')",
+        "UserHelper.php#hasHelper",
+        "inventory.json#fontes.*.evidencia.cabecalho (19 guarda, 14 die_fora_do_joomla)",
+        "inventory.json#fontes.*.evidencia.php_minimo_sintaxe (33 arquivos 7.0; UserHelper 7.1; EmailSendHelper 7.4)",
+        "inventory.json#registro.nao_registrados (ArrayHelper, BackupDatabaseHelper)"
+      ],
+      "fontes": [
+        "packages/heuderdev/helpers/composer.json",
+        "packages/heuderdev/helpers/src/*.php"
+      ],
+      "proposta": "48e18dde21cb",
+      "sha256": "db6eb7ff23970b792742b01b12c4994465ad7f8f5f9e3131c6c1bef16e4b1ca2"
+    },
+    ".claude/settings.json": {
+      "evidencias": [
+        "config.php contém credenciais (estrutura lida com valores mascarados)",
+        "vendor/ é gerado por composer reinstall"
+      ],
+      "fontes": [
+        ".gitignore"
+      ],
+      "proposta": "48e18dde21cb",
+      "sha256": "4600de31013ea6da4fa55f17053e1e14c1546349a5c4fdc29d6caf3238a3449d"
+    },
+    ".claude/skills/novo-helper/SKILL.md": {
+      "evidencias": [
+        "IncludeHelper.php#$dependencies/$autoloadMap/$classMap",
+        "git log: 304ae7f UserHelper, 7d111c3 SheetToTableHelper (mesmo procedimento repetido)"
+      ],
+      "fontes": [
+        "composer.json",
+        "packages/heuderdev/helpers/composer.json",
+        "packages/heuderdev/helpers/src/IncludeHelper.php"
+      ],
+      "proposta": "48e18dde21cb",
+      "sha256": "4db9f264601eef39204ed131608523693ee0f4bdc660a1e89bb24b8c160b787c"
+    },
+    ".claude/skills/publicar-helpers/SKILL.md": {
+      "evidencias": [
+        "git log --format=%B (mensagens em português, título no presente, corpo em lista)",
+        "usuario: pedidos repetidos de 'crie o commit e o push'"
+      ],
+      "fontes": [
+        ".gitignore",
+        "composer.json"
+      ],
+      "proposta": "48e18dde21cb",
+      "sha256": "b447dfaa8f4b7d9b968dbedb9c18156011f7e9c0e40ed443cb269a30bfe68774"
+    },
+    "CLAUDE.md": {
+      "evidencias": [
+        ".gitignore#exports,logs,config.php,*.csv,exemplo/*",
+        "DbConnectionHelper.php#register/resolve",
+        "PlatformHelper.php#JVERSION/app()",
+        "composer.json#repositories[path].options.symlink=false",
+        "git ls-files vendor (978 arquivos versionados)",
+        "packages/heuderdev/helpers/composer.json#autoload.classmap",
+        "packages/heuderdev/helpers/composer.json#require.php>=8.3.0",
+        "usuario: PHP 7 e 8.3+, Joomla 3-6, Laravel, PHP puro, MySQL e PostgreSQL"
+      ],
+      "fontes": [
+        ".gitignore",
+        "composer.json",
+        "composer.lock",
+        "download.php",
+        "index.php",
+        "packages/heuderdev/helpers/composer.json",
+        "packages/heuderdev/helpers/src/DbConnectionHelper.php",
+        "packages/heuderdev/helpers/src/IncludeHelper.php",
+        "packages/heuderdev/helpers/src/PlatformHelper.php"
+      ],
+      "proposta": "48e18dde21cb",
+      "sha256": "a35a40059861f358586ecf832c09744eed7e555f40494263191e09624b0a9686"
+    }
+  },
+  "baseline": {
+    "config_hash": "96105cfe290e2bea7e3e6984928466216fb88bca980e2783a319866558ef38c6",
+    "fontes": {
+      ".gitignore": "2e04b4cbfde1668e55226ddf1449d05b0b93185668aff25f1e866d79287d53af",
+      "composer.json": "a5536ef9e423add3da6d98d96b368d3c7120cf42971b0797551d3bfb12cc9e58",
+      "composer.lock": "5aad30e26f5bb79ff273290b3698532b5d3d920d4c3efa1e3c893d6eff4db80a",
+      "download.php": "1a3099a40680e8237a73c11ebd27def6a18df274be7b5066eeacc3feca628b5f",
+      "index.php": "8a40200edbc00e04bcd5904c4d609ec155877218f7da103637b861861e1f2999",
+      "packages/heuderdev/helpers/composer.json": "4e5e9998e73a130016cbc33f2bdaeba25e3abc336ef83c74e5e577269c3570f9",
+      "packages/heuderdev/helpers/src/ApiResponseHelper.php": "0da8836178abb783b571957f565946097641bc8ff8b66387bc2dc62c0cbafd2f",
+      "packages/heuderdev/helpers/src/ArrayHelper.php": "e696e5fd65ac64b658ba16ab5088d7b75a3173b200870c20ce33a16e23b22105",
+      "packages/heuderdev/helpers/src/AuditHelper.php": "133a3bb0c47cfc7d40dd41873362647d0f0a85ed115a18c97797634039a76332",
+      "packages/heuderdev/helpers/src/BackupDatabaseHelper.php": "a71aadf04a2a8588682eb3996e7534bda9c2bb5466d99dc7a6f0bc262786ec4a",
+      "packages/heuderdev/helpers/src/CacheHelper.php": "d1a80101d83107359b70ccf95d03f37911be2c5dbef79aab70e9c3f6f9b1577c",
+      "packages/heuderdev/helpers/src/ChunkUploadHelper.php": "eaa194990cd9ab0d00e34bbe048a940414e1af44f184f30fef154c46e6d29333",
+      "packages/heuderdev/helpers/src/CryptoHelper.php": "ecd095cd49ebe5c1c424cbec355c9cb22df6eeaccf0988176da78471d8499cdb",
+      "packages/heuderdev/helpers/src/CsvHelper.php": "0e0b2de5f5acdb7bd2e3f3d01b759ea034f30789d3df237ae95e33ed0d339a49",
+      "packages/heuderdev/helpers/src/DateHelper.php": "a80d9d5c70e59bfd15e0e5f93981b811dcb46665df8fc96054edca9d40565523",
+      "packages/heuderdev/helpers/src/DbConnectionHelper.php": "1692be888e33cce2eda4a06f13693ef40c7f346bf599a1ca70f8a5ae4061060f",
+      "packages/heuderdev/helpers/src/DbTransactionHelper.php": "7b0402d0b359909bff0e3ad1409c7bbf31002f9c61ebdde1d8fee44331f61d5e",
+      "packages/heuderdev/helpers/src/EmailSendHelper.php": "a23b7874abb89ceddd811a0b7342eb6259f26da3854b005b11446e143f61ac52",
+      "packages/heuderdev/helpers/src/ExportHelper.php": "4e0027d618be0ef35f13fdf5b8f71003768856fd6fd98a7c436ce9173602cdf4",
+      "packages/heuderdev/helpers/src/FileHelper.php": "525d0d6be21c694c7f51dcf284df1b929c924a29707f9fa7564bbf140f62cb73",
+      "packages/heuderdev/helpers/src/FormatHelper.php": "abf5629808a45371084db65574711a55d56f60c993aa2c28664f424494711d71",
+      "packages/heuderdev/helpers/src/HttpHelper.php": "f47bb6bc3cd72edc017110a489e7af15c71a36ea15131cffb8f4f93d209f1e9e",
+      "packages/heuderdev/helpers/src/IncludeHelper.php": "98648759d3d71562690380741b8a80692f554046a1151f71151fc8daa0f92cd1",
+      "packages/heuderdev/helpers/src/InputHelper.php": "f4906c814677cafc7efb33cd26de20ab53ca6a4b13eb34c18fe60ea65d532405",
+      "packages/heuderdev/helpers/src/LockHelper.php": "bb2ce560cc92226c2c887f2e6618fa9106c421e8bcce544ec7ad23d7b8db308c",
+      "packages/heuderdev/helpers/src/LogHelper.php": "d8f0784c17ac06f7ea550cc78731fff086e1acc81e2bdbccdc93eaf5b29cc5f4",
+      "packages/heuderdev/helpers/src/MailHelper.php": "afa8afc007d06a8d93c1d7bae1042ce4d261e4dd57a98df6e7cf91d2fea953b8",
+      "packages/heuderdev/helpers/src/OrmBase.php": "1f1cf4eaf4546ad55f74932fe78ffbe97742a9a24b4e35d2c6d1ebae427cfb69",
+      "packages/heuderdev/helpers/src/OrmTables.php": "3acce59549142bf45ae79b9fb17b46d8db4b516a7ec4515452cc6276e19d87bc",
+      "packages/heuderdev/helpers/src/PermissionHelper.php": "714bbaa13ec99f39731291666fc7b3a75f96b58746e704d9dba13bb88ebb00d9",
+      "packages/heuderdev/helpers/src/PlatformHelper.php": "3846a3941d9754eff6dcc5882ce8bfdee239a6c68a3c71618e7ae90e7cf32a09",
+      "packages/heuderdev/helpers/src/QueueHelper.php": "484c689d8783825ecab177e5d074de74fbdce0a34368f9cea5acab8599882d2c",
+      "packages/heuderdev/helpers/src/RateLimitHelper.php": "ddf7146aa6512579d76322f95e53d805348da4137071e1760de678661dc593c9",
+      "packages/heuderdev/helpers/src/SettingsHelper.php": "a1fea566f83c5f66666c8ec91a44f8c9cd8c18e22b26a62399d64914bbdfdc4e",
+      "packages/heuderdev/helpers/src/SheetToTableHelper.php": "2bbdb2336a753fb21ecb52a983660cbf2b94b2f9541763baa240c032ba3fd921",
+      "packages/heuderdev/helpers/src/UploadMaster.php": "358d0240ce39de9e59982a3e25c0e30f39aac97c67c73c0a3a12ed5c279f6410",
+      "packages/heuderdev/helpers/src/UserHelper.php": "920f556f04b04cb26e7edbababd7f4b43445849a81bccb714b760d5d80b9a50c",
+      "packages/heuderdev/helpers/src/ValidationHelper.php": "1fbafdcee8eeafc358b8c213c65ed4028b9606c062fb16ff02c16af8fde93a50",
+      "packages/heuderdev/helpers/src/WebhookHelper.php": "26dbdf74f29fe8bbe4fad5a8e1b2e9f8c308e9d90f476e43269d951baef0d2ee"
+    },
+    "humanos": {
+      "arquiteto.md": "ae792457e6b44b12f682e476f5a3726d9e525d386f6fd597c662df729f3906b6",
+      "subregra.md": "4316c80f462da0fd6bdafa6cabf8e08d9851bbfb09d4dae3c485dd08a3114167"
+    },
+    "proposta": "48e18dde21cb"
+  },
+  "generator_version": "0.1.0",
+  "pendencias": [],
+  "schema_version": 1
+}

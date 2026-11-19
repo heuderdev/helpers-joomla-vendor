@@ -3,3 +3,10 @@ logs
 config.php
 *.csv
 exemplo/*
+# Claude Code: estado local da ferramenta tools/claude_project
+.claude-project/*
+!.claude-project/config.json
+!.claude-project/manifest.json
+.claude/settings.local.json
+CLAUDE.local.md
+__pycache__/
