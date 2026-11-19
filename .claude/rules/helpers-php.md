@@ -13,6 +13,9 @@ Escreva código novo no nível PHP 7.0. Ele roda de 7.0 a 8.x.
 - tipos anuláveis `?tipo` (7.1)
 - retorno `: void` (7.1)
 - `catch (A | B $e)` (7.1)
+- `private const` / `public const`, ou seja, constante com visibilidade (7.1)
+- destructuring `[$a, $b] = ...` (7.1); use `list($a, $b) = ...`
+- `array_key_first`, `array_key_last`, `is_countable` e `JSON_THROW_ON_ERROR` (7.3)
 - `??=` (7.4)
 - propriedades tipadas (7.4)
 - `fn () =>` (7.4)
@@ -30,9 +33,15 @@ Escreva código novo no nível PHP 7.0. Ele roda de 7.0 a 8.x.
 
 Na prática, os arquivos quase não usam tipos. Siga o estilo do arquivo que estiver editando.
 
-Exceções já existentes (evidência: `python -m tools.claude_project scan`). Não corrija sem pedido, mas não as copie:
-- `EmailSendHelper` exige 7.4 (propriedades tipadas, `fn`).
-- `UserHelper` usa `?callable` (7.1).
+**Situação atual:**
+- Os 33 helpers passam no `php -l` de PHP 7.1 a 8.5.
+- O `python -m tools.claude_project scan` aponta "PHP mínimo pela sintaxe 7.0" para todos.
+- Mantenha assim. Se o `scan` listar algum arquivo acima de 7.0, trate como regressão.
+
+**Para aceitar `null` sem `?tipo`:**
+- Não escreva `string $x = null`. É anulável implícito, que o PHP 8.4 marca como deprecated.
+- Deixe o parâmetro sem tipo e valide no início do método.
+- Modelos: `EmailSendHelper::optionalString` e `UserHelper::assertOptionalCallable`. Os dois mantêm o `TypeError` para valor inválido.
 
 ## Comportamentos que mudaram no PHP 8.x
 
@@ -56,7 +65,12 @@ Para helper novo, dependência nova ou classe extra no arquivo, atualize em `Inc
 - `$autoloadMap`: classe => arquivo, quando o nome da classe difere do arquivo (exceções, por exemplo).
 - `$classMap`: arquivo => classe, quando a classe principal tem outro nome (`ChunkUploadHelper` => `ChunkHelper`).
 
-Pendência observada no `scan`: `ArrayHelper` e `BackupDatabaseHelper` não estão em `$dependencies`. Avise ao mexer neles e não corrija sem pedido.
+**O que entra em `$dependencies`:**
+- Só as dependências **obrigatórias**.
+- Uma dependência opcional, usada atrás de `class_exists` ou `hasHelper`, **não** entra. O `IncludeHelper` carrega as dependências antes do helper, e se uma delas for um dos 14 helpers com `die`, o script morre em silêncio fora do Joomla.
+- Isso já aconteceu com `UserHelper` => `PermissionHelper`.
+
+**Efeito no `loadAll()`:** registrar um helper faz o `loadAll()` declará-lo logo no início. Antes de registrar, confirme que o nome da classe não colide com outra classe global do site.
 
 ## Banco: MySQL e PostgreSQL
 

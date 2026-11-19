@@ -222,6 +222,16 @@ class ToolTestCase(unittest.TestCase):
         self.assertTrue((self.root / ".claude/rules/php.md").is_file())
         self.assertIsNone(self.manifest()["baseline"])
 
+    def test_crlf_do_git_nao_e_edicao_manual(self):
+        self.first_apply()
+        target = self.root / "CLAUDE.md"
+        target.write_bytes(target.read_bytes().replace(b"\n", b"\r\n"))
+        self.assertIn(b"\r\n", target.read_bytes())
+        states = {i["caminho"]: i["estado"] for i in self.diff()["artefatos"]}
+        self.assertNotIn("CLAUDE.md", states)
+        code, out = self.run_cli("apply", "--proposal", "p1", "--yes")
+        self.assertIn("Nada a aplicar", out)
+
     # 8
     def test_yaml_invalido(self):
         files = self.full_files()
@@ -358,6 +368,16 @@ class ToolTestCase(unittest.TestCase):
         self.assertEqual(self.run_cli("apply", "--recover")[0], 0)
         self.assertEqual((self.root / ".claude/rules/php.md").read_bytes(), original[".claude/rules/php.md"])
         self.assertFalse((self.root / ".claude/rules/criado.md").exists())
+
+    def test_proposta_parcial(self):
+        self.first_apply()
+        current = (self.root / "CLAUDE.md").read_bytes()
+        self.write_proposal("p2", {"CLAUDE.md": CLAUDE_MD + "\nMais.\n"}, bases={"CLAUDE.md": sha256_bytes(current)})
+        code, out = self.run_cli("validate", "--proposal", "p2")
+        self.assertEqual(code, 0, out)
+        code, out = self.run_cli("apply", "--proposal", "p2", "--yes")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.manifest()["artefatos"]), 4)
 
     def test_apply_exige_validacao_atual(self):
         self.write_proposal("p1", self.full_files())

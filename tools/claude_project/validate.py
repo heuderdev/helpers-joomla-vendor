@@ -4,7 +4,7 @@ from pathlib import Path, PurePosixPath
 
 from .common import (
     FrontmatterError, ToolError, glob_match, is_managed_target, safe_path,
-    scan_secrets, sha256_bytes, split_frontmatter,
+    content_hash, scan_secrets, sha256_bytes, split_frontmatter,
 )
 
 ERRO, AVISO, INFO, NAO_EXECUTADA = "erro", "aviso", "info", "nao_executada"
@@ -306,10 +306,10 @@ def _check_links(report, root, path, text, files):
             report.add(ERRO, path, "Referência local quebrada (%s): %s" % (kind, target))
 
 
-def run(root, files, source_paths, limits, proposal=None, manifest=None):
+def run(root, files, source_paths, limits, proposal=None, manifest=None, proposal_files=None):
     report = validate_files(root, files, source_paths, limits)
     if proposal is not None:
-        _check_proposal(report, root, proposal, files, manifest or {})
+        _check_proposal(report, root, proposal, files if proposal_files is None else proposal_files, manifest or {})
     report.add(NAO_EXECUTADA, "-", "Comportamento no Claude Code (acionamento de skills/agents) não é verificável por esta ferramenta.")
     return report
 
@@ -330,7 +330,7 @@ def _check_proposal(report, root, proposal, files, manifest):
             target = safe_path(root, path)
         except ToolError:
             continue
-        current = sha256_bytes(target.read_bytes()) if target.is_file() else None
+        current = content_hash(target.read_bytes()) if target.is_file() else None
         managed = manifest.get("artefatos", {}).get(path)
         base = entry.get("base_sha256")
         if current is None:

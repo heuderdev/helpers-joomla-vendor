@@ -8,7 +8,7 @@ from pathlib import Path
 from . import GENERATOR_VERSION, SCHEMA_VERSION
 from .common import (
     MANIFEST_FILE, ToolError, atomic_write, canonical_json, read_json, safe_path,
-    sha256_bytes, state_dir, write_if_changed,
+    content_hash, sha256_bytes, state_dir, write_if_changed,
 )
 
 FAIL_ENV = "CLAUDE_PROJECT_FAIL_AFTER"
@@ -75,11 +75,11 @@ def plan(root, proposal, files, manifest):
         target = safe_path(root, path)
         new = files[path].encode("utf-8")
         current = target.read_bytes() if target.is_file() else None
-        current_hash = sha256_bytes(current) if current is not None else None
+        current_hash = content_hash(current) if current is not None else None
         managed = manifest.get("artefatos", {}).get(path)
         if current is None:
             action = "criar"
-        elif current == new:
+        elif current_hash == content_hash(new):
             action = "inalterado"
         elif entries.get(path, {}).get("base_sha256") == current_hash:
             action = "atualizar"
@@ -185,7 +185,7 @@ def apply(root, ident, manifest, inventory, items, proposal, skip_conflicts=Fals
             write_if_changed(snapshot, item["novo"].decode("utf-8"))
             entry = entries.get(item["caminho"], {})
             manifest["artefatos"][item["caminho"]] = {
-                "sha256": sha256_bytes(item["novo"]),
+                "sha256": content_hash(item["novo"]),
                 "fontes": sorted(entry.get("fontes", [])),
                 "evidencias": sorted(entry.get("evidencias", [])),
                 "proposta": ident,

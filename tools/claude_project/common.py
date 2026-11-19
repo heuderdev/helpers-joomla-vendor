@@ -100,6 +100,13 @@ def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def content_hash(data):
+    """Hash de conteúdo que ignora CRLF/LF em texto (core.autocrlf não vira 'edição manual')."""
+    if not is_binary(data):
+        data = data.replace(b"\r\n", b"\n")
+    return sha256_bytes(data)
+
+
 def sha256_file(path):
     digest = hashlib.sha256()
     with open(path, "rb") as handle:

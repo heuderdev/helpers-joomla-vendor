@@ -89,7 +89,7 @@ def cmd_validate(args):
         for path in data["artefatos"]:
             merged[path] = (root / path).read_text(encoding="utf-8", errors="replace")
         merged.update(files)
-        report = validate.run(root, merged, source_paths, config["limits"], proposal, manifest)
+        report = validate.run(root, merged, source_paths, config["limits"], proposal, manifest, proposal_files=files)
         report.items = [item for item in report.items if item["arquivo"] in files or item["arquivo"] in ("-", "proposal.json")
                         or item["nivel"] == validate.ERRO or item["arquivo"] in [e.get("caminho") for e in proposal["arquivos"]]]
         digest = applier.proposal_hash(proposal, files)

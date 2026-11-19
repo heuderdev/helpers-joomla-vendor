@@ -14,14 +14,23 @@ Biblioteca de helpers PHP reutilizáveis (`heuderdev/helpers`) e a aplicação m
 
 - Os helpers precisam funcionar em Joomla 3, 4, 5 e 6, Laravel e PHP puro, em **PHP 7 e PHP 8.3+**, com **MySQL e PostgreSQL**.
 - A plataforma é detectada em runtime pelo `PlatformHelper` (`JVERSION`, `app()`).
-- O `composer.json` do pacote declara `php >=8.3` e `joomla/database ^4.0`. Isso vale para a instalação via Composer e não libera sintaxe PHP 8. Não altere essas restrições sem pedido.
+- Os fontes ficam no nível de sintaxe PHP 7.0 e funcionam de 7.0 a 8.5 quando carregados pelo `IncludeHelper`, que é o caso do Joomla.
+- Pela instalação via Composer, o piso é **PHP 7.4**. O `composer.json` do pacote declara `php >=7.4.0` e `joomla/database ^2.0 || ^3.0 || ^4.0`, e o Composer escolhe a versão pelo PHP do servidor:
+
+  | PHP | `joomla/database` | `phpspreadsheet` |
+  |---|---|---|
+  | 7.4 | 2.x | 1.29+ |
+  | 8.1 | 3.x | 5.x |
+  | 8.3+ | 4.x | 5.x |
+
+- Não aperte nem afrouxe essas faixas sem pedido e sem testar nas versões de PHP envolvidas.
 - Regras de sintaxe, cabeçalho e SQL: `.claude/rules/helpers-php.md` (carregada ao mexer nos helpers).
 
 ## Fluxo de alteração
 
 1. Edite somente em `packages/heuderdev/helpers/src/`. Nunca edite `vendor/` à mão.
 2. Na raiz, rode `composer reinstall heuderdev/helpers` para espelhar em `vendor/`.
-3. Rode `php -l` em cada arquivo alterado.
+3. Rode `php -l` em cada arquivo alterado, com o PHP padrão e com o mais antigo instalado: `C:/laragon/bin/php/php-7.1.3-nts-Win32-VC14-x64/php.exe -n -l <arquivo>`. As versões instaladas são 7.1, 7.2, 7.4, 8.1, 8.2, 8.3, 8.4 e 8.5; não há 7.0.
 4. Confira que `diff -rq packages/heuderdev/helpers/src vendor/heuderdev/helpers/src` não imprime nada.
 
 Não há testes automatizados, lint configurado nem CI. Para testar comportamento, use um script temporário fora do repositório ou em `exemplo/`. Avise que o teste é manual.

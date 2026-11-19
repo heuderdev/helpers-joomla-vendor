@@ -7,12 +7,16 @@ from pathlib import Path, PurePosixPath
 from . import GENERATOR_VERSION, SCHEMA_VERSION
 from .common import (
     INVENTORY_FILE, canonical_json, config_hash, glob_match, is_binary,
-    is_managed_target, scan_secrets, sha256_bytes, state_dir, write_if_changed,
+    content_hash, is_managed_target, scan_secrets, sha256_bytes, state_dir, write_if_changed,
 )
 
 PHP_FEATURES = [
     ("7.1", "retorno void", re.compile(r"\)\s*:\s*void\b")),
     ("7.1", "tipo anulável", re.compile(r"(?:\(|,\s*|\)\s*:\s*)\?[A-Za-z_\\]+\s*(?:\$|\{|$)")),
+    ("7.1", "const com visibilidade", re.compile(r"^\s*(?:public|protected|private)\s+const\b")),
+    ("7.1", "destructuring [$a, $b] =", re.compile(r"^\s*\[\s*\$[^\]]*\]\s*=[^=>]")),
+    ("7.1", "catch múltiplo", re.compile(r"catch\s*\([^)$]*\|")),
+    ("7.3", "array_key_first/last, is_countable, JSON_THROW_ON_ERROR", re.compile(r"\b(?:array_key_(?:first|last)|is_countable)\s*\(|\bJSON_THROW_ON_ERROR\b")),
     ("7.4", "arrow function", re.compile(r"(?<![\w$>])fn\s*\(")),
     ("7.4", "operador ??=", re.compile(r"\?\?=")),
     ("7.4", "propriedade tipada", re.compile(r"\b(?:public|protected|private)\s+(?:static\s+)?\??(?:int|string|bool|float|array|iterable|object|self)\s+\$")),
@@ -194,13 +198,13 @@ def scan(root, config):
                 skip("link_simbolico", rel)
                 continue
             if is_managed_target(rel):
-                artifacts[rel] = sha256_bytes(full.read_bytes())
+                artifacts[rel] = content_hash(full.read_bytes())
                 continue
             if rel.startswith(".claude/"):
                 skip("claude_nao_gerenciado", rel)
                 continue
             if rel in config["human_files"]:
-                humans[rel] = sha256_bytes(full.read_bytes())
+                humans[rel] = content_hash(full.read_bytes())
                 continue
             if any(glob_match(pattern, rel) for pattern in config["exclude_globs"]):
                 skip("padrao_excluido", rel)
@@ -217,7 +221,7 @@ def scan(root, config):
                 skip("binario", rel)
                 continue
             text = data.decode("utf-8", errors="replace")
-            entry = {"sha256": sha256_bytes(data), "bytes": size, "categoria": _category(rel, config)}
+            entry = {"sha256": content_hash(data), "bytes": size, "categoria": _category(rel, config)}
             secrets = scan_secrets(text)
             if secrets:
                 entry["sensivel"] = sorted({hit["tipo"] for hit in secrets})
